@@ -14,7 +14,9 @@ from app.services.eval_deterministic import run_deterministic_evaluation
 
 logger = logging.getLogger("aegis.eval")
 
-DETERMINISTIC_EVAL_TYPES = frozenset({"exact", "substring", "regex", "embedding", "json_schema", "numeric"})
+DETERMINISTIC_EVAL_TYPES = frozenset(
+    {"exact", "substring", "regex", "embedding", "json_schema", "numeric", "fuzzy_match", "contains_all", "not_contains"}
+)
 
 
 def _build_eval_prompt(content: str, request_context: str | None) -> str:

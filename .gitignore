@@ -46,3 +46,6 @@ backend/test_aegis.db
 
 # Logs
 *.log
+
+# GitHub Workflows (requires workflow scope PAT)
+.github/

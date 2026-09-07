@@ -2365,6 +2365,9 @@ export function NodeInspector({
                   <SelectItem value="substring">Substring match</SelectItem>
                   <SelectItem value="regex">Regex match</SelectItem>
                   <SelectItem value="embedding">Embedding similarity</SelectItem>
+                  <SelectItem value="fuzzy_match">Fuzzy string similarity</SelectItem>
+                  <SelectItem value="contains_all">Contains all keywords</SelectItem>
+                  <SelectItem value="not_contains">Does not contain (forbidden)</SelectItem>
                   <SelectItem value="json_schema">JSON Schema</SelectItem>
                   <SelectItem value="numeric">Numeric (within tolerance)</SelectItem>
                 </SelectContent>
@@ -2565,6 +2568,74 @@ export function NodeInspector({
                   />
                 </div>
               </>
+            )}
+
+            {data.evalType === "fuzzy_match" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor={fieldId("fuzzy-target")}>Expected reference text</Label>
+                  <Textarea
+                    id={fieldId("fuzzy-target")}
+                    rows={3}
+                    value={data.evalExpected || ""}
+                    onChange={(e) => update({ evalExpected: e.target.value })}
+                    placeholder="Reference text to compare against with fuzzy string similarity"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={fieldId("fuzzy-threshold-0-1")}>Fuzzy similarity threshold (0–1)</Label>
+                  <Input
+                    id={fieldId("fuzzy-threshold-0-1")}
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={data.evalSimilarityThreshold ?? 0.8}
+                    onChange={(e) =>
+                      update({
+                        evalSimilarityThreshold: e.target.value
+                          ? Number(e.target.value)
+                          : undefined,
+                      })
+                    }
+                  />
+                  <p className="form-hint">
+                    Minimum ratio required to pass (default 0.80).
+                  </p>
+                </div>
+              </>
+            )}
+
+            {data.evalType === "contains_all" && (
+              <div className="space-y-2">
+                <Label htmlFor={fieldId("contains-all-keywords")}>Required keywords / phrases</Label>
+                <Textarea
+                  id={fieldId("contains-all-keywords")}
+                  rows={3}
+                  value={data.evalExpected || ""}
+                  onChange={(e) => update({ evalExpected: e.target.value })}
+                  placeholder={'status, order_id, refund\nor JSON: ["status", "order_id"]'}
+                />
+                <p className="form-hint">
+                  Comma-separated or JSON list. The eval verifies that all required keywords are present.
+                </p>
+              </div>
+            )}
+
+            {data.evalType === "not_contains" && (
+              <div className="space-y-2">
+                <Label htmlFor={fieldId("not-contains-keywords")}>Forbidden keywords / phrases</Label>
+                <Textarea
+                  id={fieldId("not-contains-keywords")}
+                  rows={3}
+                  value={data.evalExpected || ""}
+                  onChange={(e) => update({ evalExpected: e.target.value })}
+                  placeholder={"As an AI, I don't know, competitor_name"}
+                />
+                <p className="form-hint">
+                  Comma-separated or JSON list. The eval verifies that none of these forbidden terms appear.
+                </p>
+              </div>
             )}
 
             {(data.evalType || "llm") === "llm" && (

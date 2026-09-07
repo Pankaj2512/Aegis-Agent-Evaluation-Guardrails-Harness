@@ -76,7 +76,10 @@ export type EvalType =
   | "regex"
   | "embedding"
   | "json_schema"
-  | "numeric";
+  | "numeric"
+  | "contains_all"
+  | "not_contains"
+  | "fuzzy_match";
 export type GuardrailMode = "input" | "output";
 /** Which side(s) of every agent's model call a workflow-level policy guards. */
 export type WorkflowGuardrailMode = "input" | "output" | "both";

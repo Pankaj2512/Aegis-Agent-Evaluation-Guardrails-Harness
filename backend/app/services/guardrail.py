@@ -275,10 +275,16 @@ def _parse_schema(raw: Any) -> dict | None:
 def validate_against_schema(text: str, schema: dict) -> tuple[bool, str]:
     """Parse ``text`` as JSON and validate it against ``schema``. Pure — no LLM.
 
+    Supports JSON enclosed in markdown code fences (e.g. ```json ... ```).
     Returns ``(ok, error_message)``.
     """
+    cleaned = text.strip() if text else ""
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE)
+    if fence_match:
+        cleaned = fence_match.group(1).strip()
+
     try:
-        data = json.loads(text)
+        data = json.loads(cleaned)
     except (ValueError, TypeError) as exc:
         return False, f"not valid JSON ({exc})"
     try:

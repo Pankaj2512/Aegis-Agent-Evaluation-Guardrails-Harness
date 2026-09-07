@@ -1,13 +1,27 @@
-"""Fast deterministic evaluation strategies (exact, substring, regex, embedding)."""
+"""Fast deterministic evaluation strategies (exact, substring, regex, embedding, fuzzy, schema, keywords)."""
 
 from __future__ import annotations
 
+import difflib
+import json
 import re
 from typing import Any
 
 from app.services.embeddings import cosine_similarity_vectors, embed_text
 
 DEFAULT_SIMILARITY_THRESHOLD = 0.75
+DEFAULT_FUZZY_THRESHOLD = 0.80
+
+
+def extract_json_text(text: str) -> str:
+    """Extract JSON string from raw text, unwrapping markdown code fences if present."""
+    if not text:
+        return ""
+    stripped = text.strip()
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", stripped, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return stripped
 
 
 def _score_dict(
@@ -133,28 +147,208 @@ def evaluate_embedding_similarity(
     )
 
 
-def evaluate_json_schema(content: str) -> dict[str, Any]:
-    """Pass when the output parses as JSON (schema-shaped correctness gate)."""
-    import json as _json
-
+def evaluate_json_schema(
+    content: str,
+    schema: dict[str, Any] | str | None = None,
+) -> dict[str, Any]:
+    """Pass when output parses as valid JSON and conforms to optional JSON schema."""
+    cleaned = extract_json_text(content)
     try:
-        _json.loads(content)
-        passed = True
-        reason = "Output is valid JSON"
+        data = json.loads(cleaned)
     except Exception as exc:  # noqa: BLE001
-        passed = False
-        reason = f"Invalid JSON: {exc}"
-    score = 5 if passed else 1
-    return {
-        "eval_type": "json_schema",
-        "passed": passed,
-        "aggregate_score": float(score),
-        "faithfulness": score,
-        "helpfulness": score,
-        "relevance": score,
-        "toxicity": 1,
-        "reasoning": reason,
-    }
+        return _score_dict(
+            eval_type="json_schema",
+            passed=False,
+            match_score=0.0,
+            reasoning=f"Invalid JSON: {exc}",
+        )
+
+    parsed_schema: dict[str, Any] | None = None
+    if isinstance(schema, dict):
+        parsed_schema = schema
+    elif isinstance(schema, str) and schema.strip():
+        try:
+            val = json.loads(schema.strip())
+            if isinstance(val, dict):
+                parsed_schema = val
+        except Exception as exc:  # noqa: BLE001
+            return _score_dict(
+                eval_type="json_schema",
+                passed=False,
+                match_score=0.0,
+                reasoning=f"Invalid JSON Schema definition: {exc}",
+                extra={"schema_error": str(exc)},
+            )
+
+    if parsed_schema:
+        try:
+            import jsonschema
+
+            jsonschema.validate(data, parsed_schema)
+            return _score_dict(
+                eval_type="json_schema",
+                passed=True,
+                match_score=1.0,
+                reasoning="Output conforms to JSON Schema",
+                extra={"schema_validated": True},
+            )
+        except jsonschema.ValidationError as exc:
+            return _score_dict(
+                eval_type="json_schema",
+                passed=False,
+                match_score=0.0,
+                reasoning=f"Schema validation failed: {exc.message}",
+                extra={"schema_validated": True, "error": exc.message, "path": list(exc.path)},
+            )
+        except jsonschema.SchemaError as exc:
+            return _score_dict(
+                eval_type="json_schema",
+                passed=False,
+                match_score=0.0,
+                reasoning=f"Invalid schema: {exc.message}",
+                extra={"schema_validated": True, "error": exc.message},
+            )
+
+    return _score_dict(
+        eval_type="json_schema",
+        passed=True,
+        match_score=1.0,
+        reasoning="Output is valid JSON",
+        extra={"schema_validated": False},
+    )
+
+
+def evaluate_fuzzy_match(
+    content: str,
+    expected: str,
+    *,
+    threshold: float = DEFAULT_FUZZY_THRESHOLD,
+) -> dict[str, Any]:
+    """Score textual similarity using fuzzy string matching (Gestalt pattern matching)."""
+    actual = (content or "").strip()
+    target = (expected or "").strip()
+    if not target:
+        return _score_dict(
+            eval_type="fuzzy_match",
+            passed=False,
+            match_score=0.0,
+            reasoning="Fuzzy match requires non-empty expected text",
+        )
+    ratio = difflib.SequenceMatcher(None, actual.lower(), target.lower()).ratio()
+    passed = ratio >= threshold
+    return _score_dict(
+        eval_type="fuzzy_match",
+        passed=passed,
+        match_score=round(ratio, 4),
+        reasoning=(
+            f"Fuzzy similarity {ratio:.3f} >= threshold {threshold:.3f}"
+            if passed
+            else f"Fuzzy similarity {ratio:.3f} < threshold {threshold:.3f}"
+        ),
+        extra={
+            "similarity": round(ratio, 4),
+            "threshold": threshold,
+            "expected_preview": target[:120],
+        },
+    )
+
+
+def _parse_item_list(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    if not isinstance(raw, str):
+        return []
+    cleaned = raw.strip()
+    if cleaned.startswith("[") and cleaned.endswith("]"):
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, list):
+                return [str(x).strip() for x in parsed if str(x).strip()]
+        except Exception:
+            pass
+    parts = re.split(r"[\n,]+", cleaned)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def evaluate_contains_all(
+    content: str,
+    expected: str | list[str],
+    *,
+    case_sensitive: bool = False,
+) -> dict[str, Any]:
+    """Verify that all expected keywords/phrases appear in the content."""
+    items = _parse_item_list(expected)
+    if not items:
+        return _score_dict(
+            eval_type="contains_all",
+            passed=False,
+            match_score=0.0,
+            reasoning="Contains-all check requires at least one expected keyword",
+        )
+    text = content or ""
+    haystack = text if case_sensitive else text.lower()
+    missing: list[str] = []
+    found: list[str] = []
+    for item in items:
+        needle = item if case_sensitive else item.lower()
+        if needle in haystack:
+            found.append(item)
+        else:
+            missing.append(item)
+
+    passed = len(missing) == 0
+    match_score = len(found) / len(items)
+    reasoning = (
+        f"All {len(items)} required keywords present ({', '.join(found[:5])})"
+        if passed
+        else f"Missing {len(missing)} of {len(items)} keywords: {', '.join(missing[:5])}"
+    )
+    return _score_dict(
+        eval_type="contains_all",
+        passed=passed,
+        match_score=round(match_score, 4),
+        reasoning=reasoning,
+        extra={"found": found, "missing": missing, "total_expected": len(items)},
+    )
+
+
+def evaluate_not_contains(
+    content: str,
+    forbidden: str | list[str],
+    *,
+    case_sensitive: bool = False,
+) -> dict[str, Any]:
+    """Verify that no forbidden keywords/phrases appear in the content."""
+    items = _parse_item_list(forbidden)
+    if not items:
+        return _score_dict(
+            eval_type="not_contains",
+            passed=True,
+            match_score=1.0,
+            reasoning="No forbidden terms specified",
+        )
+    text = content or ""
+    haystack = text if case_sensitive else text.lower()
+    violations: list[str] = []
+    for item in items:
+        needle = item if case_sensitive else item.lower()
+        if needle in haystack:
+            violations.append(item)
+
+    passed = len(violations) == 0
+    match_score = 1.0 if passed else 0.0
+    reasoning = (
+        "No forbidden keywords found"
+        if passed
+        else f"Forbidden keywords detected ({len(violations)}): {', '.join(violations[:5])}"
+    )
+    return _score_dict(
+        eval_type="not_contains",
+        passed=passed,
+        match_score=match_score,
+        reasoning=reasoning,
+        extra={"violations": violations},
+    )
 
 
 def evaluate_numeric(content: str, expected: str, *, tolerance: float = 0.0) -> dict[str, Any]:
@@ -196,7 +390,19 @@ def run_deterministic_evaluation(eval_type: str, content: str, meta: dict[str, A
     if normalized == "regex":
         return evaluate_regex(content, str(meta.get("eval_pattern") or ""))
     if normalized == "json_schema":
-        return evaluate_json_schema(content)
+        schema = meta.get("eval_expected") or meta.get("eval_schema") or meta.get("eval_json_schema")
+        return evaluate_json_schema(content, schema=schema)
+    if normalized == "fuzzy_match":
+        threshold = meta.get("eval_similarity_threshold")
+        return evaluate_fuzzy_match(
+            content,
+            str(meta.get("eval_expected") or ""),
+            threshold=float(threshold) if threshold is not None else DEFAULT_FUZZY_THRESHOLD,
+        )
+    if normalized == "contains_all":
+        return evaluate_contains_all(content, meta.get("eval_expected") or "")
+    if normalized == "not_contains":
+        return evaluate_not_contains(content, meta.get("eval_expected") or "")
     if normalized == "numeric":
         tolerance = meta.get("eval_tolerance")
         return evaluate_numeric(
