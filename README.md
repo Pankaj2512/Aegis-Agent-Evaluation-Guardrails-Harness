@@ -109,8 +109,28 @@ API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 | **Workflows** | Publish lifecycle board · visual canvas · templates · version history |
 | **Observability** | Live SSE · regression queue · failure clusters · failed/running stream · all runs |
 | **Guardrails** | Policy playground — rules, Presidio PII, prompt injection, LLM classifier |
+| **Evaluations** | Multi-dimension LLM judge · deterministic rules · RAG grounding & hallucination risk |
 | **Settings** | API key · integration credentials · eval presets · alert rules · ops knobs |
 | **Runs** | Detail view · comparison · feedback · trace deep-links |
+
+---
+
+## Evaluations & Hallucination Guardrails
+
+Aegis provides a dual-tier evaluation engine combining instant deterministic assertions with semantic LLM judges:
+
+### 1. Deterministic Rule Evaluators (Zero API Overhead)
+- **JSON Schema & Code Fences**: Validates structured output against formal JSON Schemas with automatic markdown fence extraction (` ```json ... ``` `).
+- **Fuzzy String Match**: Gestalt pattern matching with configurable similarity thresholds (`DEFAULT_FUZZY_THRESHOLD = 0.70`).
+- **Keyword Assertions**: `contains_all` (verifies every required key term) and `not_contains` (flags forbidden phrases or competitor mentions).
+- **Exact, Substring, Regex & Numeric Range**: Fast assertions executed directly without consuming LLM quotas.
+
+### 2. RAG Quality & Hallucination Risk Assessment
+Evaluates retrieval triples `(question, retrieved-context, answer)`:
+- **Lexical Grounding Ratio**: Deterministic token overlap ratio `[0.0, 1.0]` computing the proportion of answer claims directly grounded in the retrieved context.
+- **Semantic Faithfulness Judge**: 1–5 scoring by Gemini assessing whether the answer is factually faithful to source material.
+- **Hallucination Risk Matrix**: Automated tiering (`LOW`, `MEDIUM`, `HIGH`, `UNKNOWN`) with confidence calibration and behavioral warning flags (`unsupported_claims_likely`, `low_lexical_overlap`).
+
 
 ---
 
