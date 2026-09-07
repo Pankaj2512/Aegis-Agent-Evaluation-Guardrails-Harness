@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+backend/.venv/
+
+# Build
+.next/
+frontend/.next/
+frontend/.next-build/
+frontend/out/
+frontend/tsconfig.tsbuildinfo
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Git worktrees checked out inside the repo (they duplicate the whole tree and
+# pollute every recursive search / grep)
+.worktrees/
+
+# Local tooling scratch output
+.audit/
+.kimchi/
+.superpowers/
+graphify-out/cache/
+
+# Agent/session dumps occasionally written to the repo root
+/*.html
+
+# Env
+.env
+.env.local
+
+# Local SQLite fallback
+backend/aegis.db
+backend/test_aegis.db
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Logs
+*.log
