@@ -1,0 +1,21 @@
+services:
+  postgres:
+    # pgvector/pgvector rather than plain postgres:16 because
+    # backend/alembic/versions/006_jobs_pgvector_retention.py runs
+    # "CREATE EXTENSION IF NOT EXISTS vector" on every Postgres upgrade.
+    # On a stock postgres image that statement fails (the extension is not
+    # available to install), so "alembic upgrade head" cannot provision a fresh
+    # local database. Having the extension present is independent of
+    # PGVECTOR_ENABLED, which gates whether the app actually uses vector search.
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis
+      POSTGRES_DB: aegis
+    ports:
+      - "5432:5432"
+    volumes:
+      - aegis_pg_data:/var/lib/postgresql/data
+
+volumes:
+  aegis_pg_data:

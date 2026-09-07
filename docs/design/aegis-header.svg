@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-labelledby="title desc">
+  <title id="title">Aegis — Visual Agent Workbench</title>
+  <desc id="desc">Dark instrument banner with shield mark, workflow graph motif, and product tagline</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#141311"/>
+      <stop offset="100%" stop-color="#0e0d0b"/>
+    </linearGradient>
+    <linearGradient id="edgeActive" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#b5b0a0" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#e3dfd3" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#b5b0a0" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="hairline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e3dfd3" stop-opacity="0"/>
+      <stop offset="20%" stop-color="#e3dfd3" stop-opacity="0.45"/>
+      <stop offset="80%" stop-color="#e3dfd3" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#e3dfd3" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#21201c" stroke-width="1"/>
+    </pattern>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Frame -->
+  <rect width="1280" height="420" fill="url(#panel)"/>
+  <rect width="1280" height="420" fill="url(#grid)" opacity="0.9"/>
+
+  <!-- Soft vignette -->
+  <rect width="1280" height="420" fill="#0e0d0b" opacity="0.25"/>
+  <ellipse cx="640" cy="210" rx="520" ry="200" fill="#191815" opacity="0.55"/>
+
+  <!-- Outer border -->
+  <rect x="1" y="1" width="1278" height="418" fill="none" stroke="#d6cfbf" stroke-opacity="0.13" stroke-width="1"/>
+
+  <!-- Top hairline -->
+  <rect x="80" y="0" width="1120" height="1" fill="url(#hairline)"/>
+
+  <!-- Abstract workflow graph (right) -->
+  <g transform="translate(720 95)" opacity="0.95">
+    <!-- edges -->
+    <path d="M 70 48 C 120 48, 140 48, 190 90" fill="none" stroke="url(#edgeActive)" stroke-width="1.5"/>
+    <path d="M 70 130 C 120 130, 140 130, 190 90" fill="none" stroke="#514f47" stroke-width="1.25"/>
+    <path d="M 250 90 C 300 90, 320 90, 370 55" fill="none" stroke="#514f47" stroke-width="1.25"/>
+    <path d="M 250 90 C 300 90, 320 90, 370 125" fill="none" stroke="url(#edgeActive)" stroke-width="1.5"/>
+    <path d="M 430 55 C 470 55, 480 55, 510 90" fill="none" stroke="#514f47" stroke-width="1.25"/>
+    <path d="M 430 125 C 470 125, 480 125, 510 90" fill="none" stroke="#514f47" stroke-width="1.25"/>
+
+    <!-- nodes -->
+    <!-- trigger -->
+    <g transform="translate(20 28)">
+      <rect width="100" height="40" rx="4" fill="#141311" stroke="#d6cfbf" stroke-opacity="0.24"/>
+      <rect x="0" y="0" width="3" height="40" rx="1" fill="#61a877"/>
+      <text x="14" y="25" fill="#eae7e0" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" font-weight="500">Trigger</text>
+    </g>
+    <!-- agent -->
+    <g transform="translate(20 110)">
+      <rect width="100" height="40" rx="4" fill="#141311" stroke="#d6cfbf" stroke-opacity="0.24"/>
+      <rect x="0" y="0" width="3" height="40" rx="1" fill="#a488cf"/>
+      <text x="14" y="25" fill="#eae7e0" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" font-weight="500">Agent</text>
+    </g>
+    <!-- router -->
+    <g transform="translate(190 70)">
+      <rect width="100" height="40" rx="4" fill="#191815" stroke="#e3dfd3" stroke-opacity="0.35"/>
+      <rect x="0" y="0" width="3" height="40" rx="1" fill="#56aabd"/>
+      <text x="14" y="25" fill="#eae7e0" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" font-weight="600">Router</text>
+    </g>
+    <!-- guardrail -->
+    <g transform="translate(370 35)">
+      <rect width="110" height="40" rx="4" fill="#141311" stroke="#d6cfbf" stroke-opacity="0.24"/>
+      <rect x="0" y="0" width="3" height="40" rx="1" fill="#c97882"/>
+      <text x="14" y="25" fill="#eae7e0" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" font-weight="500">Guardrail</text>
+    </g>
+    <!-- eval -->
+    <g transform="translate(370 105)">
+      <rect width="110" height="40" rx="4" fill="#141311" stroke="#d6cfbf" stroke-opacity="0.24"/>
+      <rect x="0" y="0" width="3" height="40" rx="1" fill="#cf9d4f"/>
+      <text x="14" y="25" fill="#eae7e0" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" font-weight="500">Eval</text>
+    </g>
+    <!-- end -->
+    <g transform="translate(510 70)">
+      <rect width="88" height="40" rx="4" fill="#141311" stroke="#d6cfbf" stroke-opacity="0.24"/>
+      <rect x="0" y="0" width="3" height="40" rx="1" fill="#e3dfd3"/>
+      <text x="14" y="25" fill="#eae7e0" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" font-weight="500">End</text>
+    </g>
+
+    <!-- port dots -->
+    <rect x="116" y="44" width="8" height="8" rx="1" fill="#0e0d0b" stroke="#b5b0a0" stroke-width="1.25"/>
+    <rect x="116" y="126" width="8" height="8" rx="1" fill="#0e0d0b" stroke="#b5b0a0" stroke-width="1.25"/>
+    <rect x="186" y="86" width="8" height="8" rx="1" fill="#0e0d0b" stroke="#b5b0a0" stroke-width="1.25"/>
+    <rect x="286" y="86" width="8" height="8" rx="1" fill="#0e0d0b" stroke="#b5b0a0" stroke-width="1.25"/>
+  </g>
+
+  <!-- Brand lockup (left) -->
+  <g transform="translate(96 128)">
+    <!-- Shield mark -->
+    <g transform="translate(0 8)">
+      <path
+        d="M32 4 L56 14 V34 C56 48 46 58 32 64 C18 58 8 48 8 34 V14 Z"
+        fill="#191815"
+        stroke="#e3dfd3"
+        stroke-width="1.5"
+        stroke-opacity="0.85"
+      />
+      <path
+        d="M32 14 L48 20 V34 C48 44 41 51 32 55 C23 51 16 44 16 34 V20 Z"
+        fill="none"
+        stroke="#e3dfd3"
+        stroke-width="1.25"
+        stroke-opacity="0.35"
+      />
+      <path d="M32 22 V46" stroke="#e3dfd3" stroke-width="1.5" stroke-linecap="round" opacity="0.9"/>
+      <path d="M24 30 H40" stroke="#e3dfd3" stroke-width="1.5" stroke-linecap="round" opacity="0.9"/>
+    </g>
+
+    <!-- Wordmark -->
+    <text x="78" y="42" fill="#eae7e0" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="48" font-weight="600" letter-spacing="-0.5">Aegis</text>
+    <text x="80" y="72" fill="#a8a496" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="500" letter-spacing="2.4">WORKBENCH</text>
+
+    <!-- Tagline -->
+    <text x="80" y="118" fill="#eae7e0" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="18" font-weight="500">Visual agent development</text>
+    <text x="80" y="146" fill="#8b8779" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="15">Guardrails · evals · observability — built in</text>
+
+    <!-- Lifecycle micro bar -->
+    <g transform="translate(80 178)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11">
+      <text fill="#8b8779">draft</text>
+      <text x="42" fill="#514f47">→</text>
+      <text x="58" fill="#8b8779">publish</text>
+      <text x="112" fill="#514f47">→</text>
+      <text x="128" fill="#8b8779">run</text>
+      <text x="156" fill="#514f47">→</text>
+      <text x="172" fill="#8b8779">measure</text>
+      <text x="230" fill="#514f47">→</text>
+      <text x="246" fill="#e3dfd3">ship</text>
+    </g>
+  </g>
+
+  <!-- Bottom status strip -->
+  <rect x="0" y="388" width="1280" height="32" fill="#0e0d0b" opacity="0.85"/>
+  <line x1="0" y1="388" x2="1280" y2="388" stroke="#d6cfbf" stroke-opacity="0.13"/>
+  <g transform="translate(96 408)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#8b8779">
+    <circle cx="0" cy="-2" r="3" fill="#61a877"/>
+    <text x="12" y="2">canvas</text>
+    <text x="72" y="2" fill="#514f47">·</text>
+    <text x="88" y="2">next.js · fastapi · gemini · adk</text>
+    <text x="980" y="2" text-anchor="end" fill="#a8a496">instrument for agents</text>
+  </g>
+</svg>

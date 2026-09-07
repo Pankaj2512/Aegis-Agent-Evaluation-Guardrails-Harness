@@ -1,0 +1,1156 @@
+{
+ "confirmed": [
+  {
+   "title": "Trace eval chip bands 1\u20135 LLM-judge scores on a 0..1 scale \u2014 failing evals always render a green 'success' chip",
+   "file": "frontend/src/components/runs/TraceNodeRow.tsx",
+   "line": 101,
+   "severity": "P0",
+   "description": "evalTone() bands the node eval aggregate with 0..1 thresholds (>=0.7 success, >=0.4 warning), and the local comment claims the score is '(0..1)'. But the LLM-judge aggregate is a weighted mean of 1\u20135 dimension scores (backend/app/services/eval.py compute_aggregate_score, toxicity inverted as 6-x; RunDetailView.tsx:413 correctly renders it as `${evalAggregate.toFixed(2)} / 5`, and AlertsCard's eval_avg hint says '1\u20135'). The minimum possible LLM-judge aggregate is 1.0, which is >= 0.7, so every LLM-judge eval chip on the run trace \u2014 including a worst-case 1.0/5 that fails the threshold \u2014 shows the green success tone. This inverts the design system's core 'eval pass/fail band' chroma semantics on the primary trace surface. Only deterministic evals (0/1 exact/regex/schema aggregates) band correctly.",
+   "evidence": "function evalTone(score: number): ChipTone {\n  if (score >= 0.7) return \"success\";\n  if (score >= 0.4) return \"warning\";\n  return \"destructive\";\n}",
+   "fix": "Band by the value's actual scale: `const tone = score > 1 ? (score >= 3.5 ? \"success\" : score >= 2.5 ? \"warning\" : \"destructive\") : (score >= 0.7 ? ...)`, and append the scale to the chip copy (`eval 3.40/5`) and title so the number is self-describing. Update the evalAggregate() doc comment.",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P0",
+    "corrected_line": 101,
+    "note": "Confirmed. evalTone() at TraceNodeRow.tsx:101-105 bands aggregate_score with 0..1 thresholds (>=0.7 success, >=0.4 warning), but every aggregate the backend produces is on a 1-5 scale: backend/app/services/eval.py compute_aggregate_score() is a weighted mean of 1-5 dimension scores (toxicity inverted as 6-x), and \u2014 stronger than the finding claims \u2014 deterministic evals too: eval_deterministic.py _score_dict() maps match_score to `1.0 + match_score * 4.0` and json_schema/numeric return 5.0 or 1.0. So the minimum possible aggregate is 1.0 >= 0.7, and EVERY eval chip on the trace (including a worst-case failing 1.00/5) renders the green success tone; the destructive/warning branches are dead code. The finding's one inaccuracy is its caveat that deterministic 0/1 aggregates band correctly \u2014 they don't (a failing deterministic eval yields 1.0, also green), which makes the bug worse, not better. Other surfaces confirm the 1-5 scale: RunDetailView.tsx:413 renders `${evalAggregate.toFixed(2)} / 5` and EvalScoresChart divides by 5. The chip also prints `eval 1.00` with no scale suffix, which reads as a perfect score on a 0-1 scale next to a green chip. This is misleading status chroma (a failed eval presented as success) on the primary trace surface and directly inverts the design system's eval pass/fail band semantics \u2014 P0 per 'actively misleading UI'. Proposed fix direction (band on the 1-5 scale, add '/5' to copy/title, fix the '(0..1)' doc comment at line 92) is correct, though the score>1 heuristic can be simplified since all aggregates are 1-5."
+   }
+  },
+  {
+   "title": "Button focus ring never renders: Tailwind v4-only `ring-3` in a v3 build",
+   "file": "frontend/src/components/ui/button.tsx",
+   "line": 8,
+   "severity": "P0",
+   "description": "The project runs Tailwind v3.4.19 (package.json / node_modules), but Button's base classes use v4-only `ring-3`. Compiling a probe against the project's own tailwind.config.ts emits NO CSS for `ring-3` (while `ring-2` compiles), so `focus-visible:ring-3 focus-visible:ring-ring/50` produces no ring at all \u2014 `ring-ring/50` only sets a color variable that nothing consumes. The only surviving focus affordance is `focus-visible:border-ring`, a 1px border tint that is ~1.4:1 contrast against the default bone (dark) / ink (light) primary button fill \u2014 effectively invisible keyboard focus on the app's most common interactive element, in BOTH themes. `aria-invalid:ring-3` and `aria-invalid:ring-destructive/20` are dead for the same reason. This silently violates the system's 'interactive elements need visible focus (focus-ring)' bar everywhere Button is used.",
+   "evidence": "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 ... aria-invalid:border-destructive aria-invalid:ring-3",
+   "fix": "Replace `ring-3` with `ring-2` (both occurrences in the cva base string), or apply the house `.focus-ring` utility from globals.css (`box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring)`), which is what the rest of the app uses.",
+   "dimension": "tokens",
+   "verdict": {
+    "is_real": true,
+    "severity": "P0",
+    "corrected_line": 8,
+    "note": "Confirmed by compiling a probe against the project's tailwind.config.ts (Tailwind v3.4.19): `ring-3` emits no CSS while `ring-2` does, and `ring-ring/50` only sets --tw-ring-color which nothing consumes without a width utility. tailwind.config.ts does not extend ringWidth. No mitigation exists: globals.css even has a global `:focus-visible { outline: none; }` (line 255), and the house `.focus-ring` box-shadow utility (line 354) is opt-in and not applied by Button. Remaining focus affordance is only `focus-visible:border-ring`, a 1px border tint with very low contrast against the primary fill in both themes (dark: ring #c8bfb2 vs primary #ece6dc; light: #756d62 vs #312d27). `aria-invalid:ring-3` is equally dead. Effectively invisible keyboard focus on the most-used interactive primitive = blocking a11y failure, P0. Fix: replace both `ring-3` occurrences with `ring-2`, or apply the `.focus-ring` utility."
+   }
+  },
+  {
+   "title": "Schedule trigger preview labeled \"Next runs (UTC)\" renders local-time values",
+   "file": "frontend/src/components/canvas/NodeInspector.tsx",
+   "line": 355,
+   "severity": "P0",
+   "description": "The trigger node's cron preview heading says \"Next runs (UTC)\" (line 352) and the hint says \"Standard 5-field cron (UTC)\" (line 345), but each timestamp is rendered with new Date(runAt).toLocaleString(), which converts to the browser's local timezone. The backend genuinely returns UTC instants (backend/app/services/cron_utils.py: `itr.get_next(datetime).replace(tzinfo=timezone.utc)`, serialized via isoformat in api/meta.py), so for any user not in UTC the values shown under the UTC label are wrong per that label \u2014 a user verifying `0 9 * * 1-5` in IST sees \"2:30:00 pm\" under \"Next runs (UTC)\". Line 362 (\"Last scheduled run: {new Date(lastFiredAt).toLocaleString()}\") has the same raw-formatting problem. These timestamps are also plain sans text \u2014 the design system requires all timestamps in font-mono + tabular-nums.",
+   "evidence": "<li key={runAt}>{new Date(runAt).toLocaleString()}</li>",
+   "fix": "Make label and value agree: either format in UTC \u2014 new Date(runAt).toLocaleString(undefined, { timeZone: \"UTC\", timeZoneName: \"short\" }) \u2014 or relabel the block \"Next runs (local time)\". Wrap the list items and the \"Last scheduled run\" value in font-mono tabular-nums (or reuse formatFullTimestamp with an explicit UTC variant in lib/format-date.ts).",
+   "dimension": "typography",
+   "verdict": {
+    "is_real": true,
+    "severity": "P0",
+    "corrected_line": 355,
+    "note": "Verified end-to-end. Backend returns tz-aware UTC instants: cron_utils.py:16 does `.replace(tzinfo=timezone.utc)` and meta.py serializes via `dt.isoformat()` (e.g. \"...T09:00:00+00:00\"). Frontend NodeInspector.tsx renders each with `new Date(runAt).toLocaleString()` (line 355) under the heading \"Next runs (UTC)\" (line 352) and hint \"Standard 5-field cron (UTC)\" (line 345), so any non-UTC user sees browser-local times presented as UTC \u2014 e.g. IST user checking `0 9 * * 1-5` sees 2:30 pm labeled UTC. This is misleading info on the scheduling config surface and can lead users to \"correct\" their cron to the wrong offset, so P0 (rubric: misleading, wrong info presented as current) is justified. Line 362 \"Last scheduled run\" has the same raw toLocaleString formatting. No mitigation found elsewhere (no shared UTC formatter used here). Secondary, correct-as-claimed: the timestamps are plain text-xs sans, violating the font-mono + tabular-nums rule for timestamps (that alone would be P1). Proposed fix (format in UTC with timeZoneName, or relabel to local time, plus mono/tabular) is sound."
+   }
+  },
+  {
+   "title": "Observability view switcher is a role=\"tablist\" whose children are not tabs",
+   "file": "frontend/src/app/observability/page.tsx",
+   "line": 456,
+   "severity": "P1",
+   "description": "The Triage | Trust | Sessions | Cost & usage switcher wraps FilterChip components in role=\"tablist\", but FilterChip (src/components/ui/filter-chip.tsx:12-15) renders a plain <button> with aria-pressed and no role=\"tab\", aria-selected, or aria-controls. ARIA requires tablist children to be role=\"tab\"; screen readers will announce an empty/broken tab list, and none of the tablist keyboard conventions (arrow-key navigation) exist. The same FilterChips are correctly wrapped in role=\"group\" in TriageStream.tsx:56, so this one surface has invalid semantics. Properly built tablists exist elsewhere (CanvasSidebar.tsx:102-122, WorkflowCanvas.tsx:2465-2496), proving the intended pattern.",
+   "evidence": "<div className=\"flex items-center gap-1.5\" role=\"tablist\" aria-label=\"Observability view\">\n      <FilterChip\n        label=\"Triage\"",
+   "fix": "Change role=\"tablist\" to role=\"group\" (matching TriageStream.tsx:56), since FilterChip already exposes aria-pressed toggle state; or, if tab semantics are wanted, add role=\"tab\"/aria-selected/aria-controls props to FilterChip and wire arrow-key handling.",
+   "dimension": "a11y",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 456,
+    "note": "Verified. frontend/src/app/observability/page.tsx:456 has role=\"tablist\" aria-label=\"Observability view\" wrapping four FilterChip components; FilterChip (src/components/ui/filter-chip.tsx) renders a plain <button> with aria-pressed and no role=\"tab\"/aria-selected/aria-controls, and no arrow-key handling exists. This violates the ARIA tablist pattern (tablist children must be tabs), so screen readers will announce an empty/malformed tab list with conflicting toggle-button semantics inside it. The identical chips are correctly wrapped in role=\"group\" in TriageStream.tsx:56, confirming this is drift, not intent. Not P0: the buttons remain focusable, clickable, and labeled, so the control is degraded rather than inaccessible. P1 is right. Proposed fix (swap to role=\"group\") is correct and minimal."
+   }
+  },
+  {
+   "title": "Canvas right-panel resize handle is keyboard-focusable but has no visible focus indicator",
+   "file": "frontend/src/components/canvas/WorkflowCanvas.tsx",
+   "line": 2463,
+   "severity": "P1",
+   "description": "useResizablePanel's handleProps (src/hooks/use-resizable-panel.ts:184-199) makes the handle a tabIndex=0 role=\"separator\" with arrow-key resizing \u2014 good \u2014 but the right-panel handle div omits the focus-ring class that its twin in CanvasSidebar.tsx:96 has. globals.css globally suppresses the native indicator (`:focus-visible { outline: none; }`, line ~255), and the handle is a 3px transparent strip, so when a keyboard user tabs onto it there is zero visual indication of focus: an invisible interactive control.",
+   "evidence": "<div\n            {...rightPanel.handleProps}\n            className=\"absolute inset-y-0 -left-px z-10 block w-[3px] cursor-col-resize transition-colors hover:bg-primary/30 active:bg-primary/30\"\n          />",
+   "fix": "Add the focus-ring class (and ideally focus-visible:bg-primary/30) to this handle, mirroring CanvasSidebar.tsx:96: className=\"focus-ring absolute inset-y-0 -left-px z-10 block w-[3px] \u2026\".",
+   "dimension": "a11y",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 2463,
+    "note": "Confirmed. WorkflowCanvas.tsx:2461-2463 spreads rightPanel.handleProps (tabIndex=0, role=separator, arrow-key resize per use-resizable-panel.ts:184-199) onto a 3px transparent div whose className lacks focus-ring. globals.css:255 globally suppresses the native outline (:focus-visible { outline: none }) and only .focus-ring:focus-visible (globals.css:354) restores a ring, so keyboard focus on this handle is completely invisible. The twin handle in CanvasSidebar.tsx:96 has focus-ring, confirming drift rather than intent. P1 fits: clear design-system violation (\"interactive elements need visible focus\"), but not P0 since the control still works via arrow keys with correct ARIA. Fix: add focus-ring (and optionally focus-visible:bg-primary/30) to the className at line 2463."
+   }
+  },
+  {
+   "title": "Visible <Label> elements rendered without htmlFor/id association to their controls",
+   "file": "frontend/src/components/settings/EvalRubricCard.tsx",
+   "line": 210,
+   "severity": "P1",
+   "description": "The Label primitive (src/components/ui/label.tsx) is a plain sibling <label>, so without htmlFor + a matching control id there is no programmatic association: screen readers announce the Input/Textarea/Select with no name, and clicking the label doesn't focus the field. Sites: EvalRubricCard.tsx:210 (Internal name), 219 (Display label), 227 (Criteria), 236 (LLM instruction); WorkflowDataPanel.tsx:275 (Title), 284 (Content), 297 (Bulk import); WorkflowGuardrailField.tsx:41 (\"Workflow guardrail policy\" Label with two unlabeled Radix Selects at 45-66 and 69-83, whose accessible name degrades to the current value, e.g. \"None\"). The codebase convention already exists \u2014 GuardrailPlayground.tsx uses useId + fieldId() with htmlFor/id on every field, as does NodeInspector \u2014 so these recently added cards drifted.",
+   "evidence": "<Label>Internal name</Label>\n            <Input\n              value={name}\n              onChange={(e) => setName(e.target.value)}\n              placeholder=\"support_quality_v2\"",
+   "fix": "Follow the GuardrailPlayground pattern: const baseId = useId(); give each control id={`${baseId}-name`} and each Label htmlFor the same id; for the two WorkflowGuardrailField Selects put id on SelectTrigger and htmlFor on the Label (plus aria-label=\"Guardrail mode\" on the second Select).",
+   "dimension": "a11y",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 210,
+    "note": "Verified. EvalRubricCard.tsx:210/219/227/236 render <Label> with no htmlFor next to Input/Textarea with no id; the Label primitive (src/components/ui/label.tsx) is a plain sibling <label> that does not wrap its control, so there is no programmatic association or click-to-focus. WorkflowDataPanel.tsx (~275/284/298) and WorkflowGuardrailField.tsx (Label at ~41, two Radix SelectTriggers at ~55 and ~74 with no id or aria-label) match the claim too. The repo convention already exists \u2014 NodeInspector.tsx uses useId() + htmlFor/id (lines 148, 226, 252, 322) and the weight inputs in the same EvalRubricCard file use aria-label \u2014 so this is drift, not intent. Minor corrections: GuardrailPlayground is at src/components/guardrails/ (not settings/), and the second Select starts ~line 68. P1 is correct: fields have placeholders and remain operable (not a blocking P0), but unnamed controls and dead labels are a genuine a11y violation."
+   }
+  },
+  {
+   "title": "Form controls whose only name is a placeholder (no Label, no aria-label)",
+   "file": "frontend/src/components/canvas/ExperimentsPanel.tsx",
+   "line": 182,
+   "severity": "P1",
+   "description": "Placeholder text is not an accessible name (it vanishes on input and is not reliably announced). Sites: ExperimentsPanel.tsx:182 (\"New dataset name\u2026\" Input), 200 (\"Add test input\u2026\" Input) and the dataset Select at 168-171 whose SelectTrigger has no aria-label (unlike the capture-filter Select at 225 which has one); EvalRubricCard.tsx:278-296 (three \"Test on a sample\" Textareas: sample input, sample output, retrieved context); AssistRail.tsx:176-180 (AI-assist instruction Textarea); NodePalette.tsx:106-111 (node search Input). Nearby controls in the same files (e.g. ExperimentsPanel's \"Capture filter\"/\"Baseline version\" Selects, QuickAddMenu.tsx:239 search) all carry aria-label, so these are omissions, not a different convention.",
+   "evidence": "<Input\n            value={newDatasetName}\n            onChange={(e) => setNewDatasetName(e.target.value)}\n            placeholder=\"New dataset name\u2026\"\n            className=\"h-8 text-xs\"\n          />",
+   "fix": "Add aria-label to each control (e.g. aria-label=\"New dataset name\", aria-label=\"Dataset\", aria-label=\"Sample output to grade\", aria-label=\"Describe an edit\", aria-label=\"Search nodes\"), or attach proper Label/htmlFor pairs where a visible label fits.",
+   "dimension": "a11y",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 182,
+    "note": "Verified all cited sites. ExperimentsPanel.tsx:182 (\"New dataset name\u2026\" Input) and :200 (\"Add test input\u2026\" Input) have only placeholders, and the dataset Select's SelectTrigger at :169 has no aria-label \u2014 while the capture-filter SelectTrigger at :225 in the same file does (\"Capture filter\"), and the adjacent icon Buttons carry aria-labels, confirming these are omissions rather than a different convention. Also confirmed: EvalRubricCard (at src/components/settings/EvalRubricCard.tsx:278-296, not canvas/ \u2014 three sample Textareas), AssistRail.tsx:177-181 (instruction Textarea), NodePalette.tsx:106-111 (search Input) \u2014 none have aria-label or an associated Label/htmlFor; nearby headings (e.g. \"Test on a sample\") are plain <p> text, not programmatically associated. The shared ui Input/Textarea/SelectTrigger primitives add no default labeling. Severity P1 is right: placeholder is only an unreliable last-resort accname fallback (vanishes on input, inconsistently announced), so this is real a11y friction and a clear consistency violation against the file's own labeled controls, but the controls are still operable, so not P0. Fix as proposed: add aria-label per control or proper Label/htmlFor."
+   }
+  },
+  {
+   "title": "Run/severity status\u2192tone map re-implemented 8+ times and already drifted (running = warning vs active vs muted)",
+   "file": "frontend/src/components/observability/SessionsView.tsx",
+   "line": 60,
+   "severity": "P1",
+   "description": "lib/run-status.ts is the canonical status\u2192variant map (running/pending/queued \u2192 warning, awaiting_approval \u2192 accent), but at least eight components re-implement their own map and the semantics have drifted: lib/run-status.ts:3-17 (runStatusVariant: running\u2192warning), components/observability/run-row.tsx:16-22 (statusDotClass: running\u2192bg-warning, awaiting_approval\u2192bg-accent), components/observability/SessionsView.tsx:60-66 (StatusMix inline: only failed/cancelled/completed colored, so a RUNNING session count renders text-muted), components/observability/ViolationBreakdown.tsx:30-34 (statusTone), app/observability/page.tsx:254-265 (kindClass: awaiting\u2192text-accent), components/runs/TraceNodeRow.tsx:43-51 (statusRing: running\u2192ring-warning) and 108-114 (guardrailTone), components/canvas/run/RunDeck.tsx:283-299 (statusClass: running/awaiting_approval\u2192text-active, a different token than everywhere else) and 325 (eventClass), components/canvas/run/RunNodeResultCard.tsx:38-46 (statusTone: running\u2192border-active). The same run status gets amber on /observability, 'active' hue on the canvas RunDeck, and plain muted in SessionsView \u2014 a direct violation of 'chroma reserved for data semantics' being consistent.",
+   "evidence": "status === \"failed\" || status === \"cancelled\"\n  ? \"text-destructive\"\n  : status === \"completed\"\n    ? \"text-success\"\n    : \"text-muted\"",
+   "fix": "Extend lib/run-status.ts with the missing projections \u2014 runStatusTextClass(status), runStatusDotClass(status), guardrailTone(status) \u2014 and replace the local maps in SessionsView, run-row, ViolationBreakdown, TraceNodeRow, RunDeck, RunNodeResultCard, and observability/page.tsx with imports, deciding once whether live statuses are 'warning' or 'active'.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 60,
+    "note": "Verified all cited maps. lib/run-status.ts (runStatusVariant) is the canonical map: running/pending/queued -> warning, awaiting_approval -> accent. At least seven other files re-implement local status->tone maps and the semantics have already drifted: run-row.tsx:16-22 (running -> bg-warning, matches lib), TraceNodeRow.tsx statusRing (running -> ring-warning), but RunDeck.tsx statusClass maps running AND awaiting_approval -> text-active (a different token than warning/accent), RunNodeResultCard.tsx statusTone maps running/awaiting_approval -> border-active, and SessionsView.tsx StatusMix (lines 60-66) only colors failed/cancelled/completed, so a running or awaiting_approval count in a session renders text-muted. Net effect confirmed: the same \"running\" run status is amber on /observability, active-hued on the canvas run deck, and plain muted in SessionsView; awaiting_approval is accent in some places and active in others. Even if text-active was an intentional token introduced with the run lens, it was not reconciled with the canonical map, which is exactly the drift. This matches the P1 rubric line \"duplicated ad-hoc component logic that has already drifted\" and violates chroma-reserved-for-data-semantics consistency. Proposed fix (centralize projections in lib/run-status.ts and decide once between warning vs active for live statuses) is sound. Files: frontend/src/lib/run-status.ts, frontend/src/components/observability/SessionsView.tsx, run-row.tsx, ViolationBreakdown.tsx, frontend/src/app/observability/page.tsx, frontend/src/components/runs/TraceNodeRow.tsx, frontend/src/components/canvas/run/RunDeck.tsx, RunNodeResultCard.tsx."
+   }
+  },
+  {
+   "title": "Guardrail rail-type label map duplicated 5x with drifted vocabulary; ViolationBreakdown's copy is missing json_schema so the raw enum leaks to the UI",
+   "file": "frontend/src/components/observability/ViolationBreakdown.tsx",
+   "line": 13,
+   "severity": "P1",
+   "description": "Five independent human-label maps exist for the same GuardrailType enum: components/observability/ViolationBreakdown.tsx:13-28 (typeLabel \u2014 has no json_schema case, so a json_schema violation row on the Trust dashboard prints the raw 'json_schema' token), components/guardrails/VerdictPanel.tsx:20-27 (TYPE_LABELS: 'rules', 'prompt injection', 'json schema'), components/guardrails/GuardrailPlayground.tsx:68-83 (guardrailTypeLabel: 'Keyword rules', 'PII scan', 'Injection check') plus its own third vocabulary in the SelectItems at 233-237 ('Rules', 'Presidio PII'), components/guardrails/PolicyTemplates.tsx:37-42 (ruleSummary prints raw rules_json values), and components/canvas/NodeInspector.tsx:2332-2337 ('Rule-based (keywords, regex, PII)', 'Prompt injection shield (Gemini)'). The same rail is named 'rules', 'Rules', 'keyword rules', 'Keyword rules', and 'Rule-based (keywords, regex, PII)' depending on the surface.",
+   "evidence": "function typeLabel(type: string): string {\n  switch (type) {\n    case \"rules\":\n      return \"keyword rules\";\n    ...\n    default:\n      return type;",
+   "fix": "Create one GUARDRAIL_TYPE_LABELS map (e.g. in src/lib/ or next to the GuardrailType type in types/workflow.ts) with a short label per rail (and optional long/hint text for the NodeInspector select), import it in all five sites, and add the missing json_schema entry.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 13,
+    "note": "Verified. (1) typeLabel in ViolationBreakdown.tsx:13-28 has cases only for rules/presidio/prompt_injection/moderation/llm and falls through to `return type` \u2014 but json_schema is a member of the GuardrailType union (types/workflow.ts:74-88), is selectable in NodeInspector (SelectItem at 2337) and is executed by the backend (backend/app/services/guardrail.py:386), so a json_schema violation row on the Trust dashboard prints the raw token 'json_schema'. (2) The 5x duplication with drift is real: VerdictPanel.tsx:20-27 TYPE_LABELS ('rules', 'presidio', 'json schema'), GuardrailPlayground.tsx:68-83 guardrailTypeLabel ('Keyword rules', 'PII scan', 'Injection check', 'Structured output') plus a third vocabulary in its SelectItems at 233-237 ('Rules', 'Presidio PII' \u2014 which also omits json_schema entirely), NodeInspector.tsx:2332-2337 ('Rule-based (keywords, regex, PII)'), and PolicyTemplates.tsx:37-42 ruleSummary printing raw enum tokens. Same rail is 'rules'/'Rules'/'keyword rules'/'Keyword rules'/'Rule-based (...)' depending on surface. Minor caveats: the longer NodeInspector select labels are arguably intentional hint-style copy, and ruleSummary's raw tokens are a compact mono descriptor \u2014 but VerdictPanel vs ViolationBreakdown vs Playground are genuinely contradictory short labels for identical concepts. Matches the P1 rubric item 'duplicated ad-hoc component logic that has already drifted'; proposed shared GUARDRAIL_TYPE_LABELS map is the right fix."
+   }
+  },
+  {
+   "title": "Millisecond/latency formatter implemented 7 times with 4+ visibly different output formats, including on the same screen",
+   "file": "frontend/src/components/observability/CostDashboard.tsx",
+   "line": 61,
+   "severity": "P1",
+   "description": "There is no shared ms formatter in lib/format.ts, so each surface rolled its own and they disagree: components/observability/CostDashboard.tsx:61-64 (formatLatency never converts to seconds \u2014 a 12,340ms p99 renders '12,340ms' on the Cost & usage view) vs components/observability/TrustDashboard.tsx:23-26 (ms(): '12.3s' for the same value on the Trust view of the same /observability page); components/runs/TraceNodeRow.tsx:54-57 (formatMs: '940 ms' / '1.2 s' with a space) vs components/runs/TraceTimeline.tsx:26-30 (formatTick: '940ms' / '1.2s' without a space) \u2014 both rendered inside the same Node timeline card; components/runs/RunDetailView.tsx:44-50 (formatDuration: '940 ms'); components/canvas/run/RunDeck.tsx:140-146 (formatDuration: trailing-zero-stripped, toFixed(2) under 10s); components/canvas/run/RunNodeResultCard.tsx:112 (inline toFixed(2)). All numerics are mono/tabular, but the unit formatting is inconsistent across and within surfaces.",
+   "evidence": "function formatLatency(ms: number | null | undefined): string {\n  if (typeof ms !== \"number\" || !Number.isFinite(ms)) return \"\u2014\";\n  return `${Math.round(ms).toLocaleString()}ms`;\n}",
+   "fix": "Add a canonical formatMs(ms) to src/lib/format.ts (e.g. <1000 \u2192 '940ms', otherwise '1.2s'/'12s') alongside formatCostUsd, and replace the seven local implementations with it.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 61,
+    "note": "Verified all seven cited implementations exist exactly as claimed. src/lib/format.ts exports only pluralize and formatCostUsd \u2014 no shared ms formatter. The drift is real and user-visible: CostDashboard.tsx:61 formatLatency never converts to seconds ('12,340ms'), while TrustDashboard.tsx:23 ms() renders '12.3s' for the same value on the same /observability page (different tabs). Within the same trace UI, TraceNodeRow.tsx:54 uses '940 ms'/'1.2 s' (with space) while TraceTimeline.tsx:26 uses '940ms'/'1.2s' (no space). RunDetailView.tsx:44 uses spaced units; RunDeck.tsx:140 uses toFixed(2) with trailing-zero stripping under 10s; RunNodeResultCard.tsx:112 has an inline toFixed(2) variant. No mitigation exists elsewhere. This matches the P1 rubric line 'duplicated ad-hoc component logic that has already drifted'. Numerics do use font-mono/tabular-nums, so it is not P0; but it is more than polish since two conflicting unit formats appear on the same page. Proposed fix (canonical formatMs in src/lib/format.ts) is sound."
+   }
+  },
+  {
+   "title": "Compact mono chip re-implemented ad hoc in 4+ feature components, with tone classes copy-pasted from Badge and already drifted",
+   "file": "frontend/src/app/observability/page.tsx",
+   "line": 444,
+   "severity": "P1",
+   "description": "The 'rounded border px-1.5 py-0.5 font-mono text-2xs' chip is hand-built in: app/observability/page.tsx:430-453 (liveBadge \u2014 uses border-success/30 bg-success/10, drifted from the Badge success variant's border-success/25 bg-success/12), components/runs/TraceNodeRow.tsx:63-90 (TraceChip + CHIP_TONE whose success/warning/destructive/outline strings are verbatim copies of badgeVariants in ui/badge.tsx:11-15), components/guardrails/VerdictPanel.tsx:29-35 (local Chip), and components/guardrails/PolicyTemplates.tsx:103-105 (category chip, which alone uses text-micro instead of text-2xs). Four hand-rolled variants of the same primitive means the next token change to Badge tones will not propagate, and one has already diverged.",
+   "evidence": "\"inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-2xs\",\nconnected\n  ? \"border-success/30 bg-success/10 text-success\"",
+   "fix": "Add a shared compact chip to src/components/ui/ (e.g. a Badge size=\"chip\" or a Chip component that reuses badgeVariants tones with mono/2xs metrics) and replace liveBadge, TraceChip, VerdictPanel Chip, and the PolicyTemplates category chip with it.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 444,
+    "note": "Verified all four cited sites. (1) observability/page.tsx:430-453 liveBadge hand-builds the compact mono chip with \"border-success/30 bg-success/10 text-success\" (line 446), which has already drifted from Badge's success variant \"border-success/25 bg-success/12\" (ui/badge.tsx:11). (2) runs/TraceNodeRow.tsx:63-90 defines CHIP_TONE whose success/warning/destructive/outline strings are verbatim copies of badgeVariants tones plus a local TraceChip wrapper. (3) guardrails/VerdictPanel.tsx:29-35 has another local Chip with the same rounded/border/px-1.5/py-0.5/font-mono/text-2xs recipe. (4) guardrails/PolicyTemplates.tsx:103-105 inlines the same chip but uses text-micro instead of text-2xs (a second drift). No shared compact-chip primitive exists in src/components/ui/ (Badge is the only tone primitive, at larger px-2.5/py-1/text-xs metrics; FilterChip is an interactive control, not a data chip; the same recipe is also inlined again in ui/command.tsx:177 and ui/dropdown-menu.tsx:203 for shortcut hints). This squarely matches the P1 rubric item \"duplicated ad-hoc component logic that has already drifted\" and the design-system rule that ad-hoc re-implementations of shared primitives are consistency findings. Proposed fix (shared Chip reusing badgeVariants tones) is sound."
+   }
+  },
+  {
+   "title": "Two stacked passed/warned/failed severity bars rendered on the same Trust screen with drifted height and opacity",
+   "file": "frontend/src/components/observability/ViolationBreakdown.tsx",
+   "line": 91,
+   "severity": "P1",
+   "description": "TrustDashboard's Safety pillar (components/observability/TrustDashboard.tsx:179-192) renders a stacked guardrail-severity bar as h-2 with bg-success/70, bg-warning/70, bg-destructive/70. ViolationBreakdown (components/observability/ViolationBreakdown.tsx:91-98) renders the identical data concept as h-1.5 with bg-success/60, bg-warning/70, bg-destructive/70. ViolationBreakdown is mounted BY TrustDashboard (TrustDashboard.tsx:207), so both implementations appear on the same Trust view a few hundred pixels apart, showing the same passed/warned/failed semantics at different weights \u2014 duplicated component logic that has already drifted.",
+   "evidence": "<div className=\"flex h-1.5 overflow-hidden rounded-full bg-surface-input\">\n  <span className=\"bg-success/60\" style={{ width: `${(row.passed / total) * 100}%` }} />",
+   "fix": "Extract a shared <SeverityBar passed warned failed height?> primitive in src/components/ui/ with one set of segment opacities, and use it in both TrustDashboard's Safety pillar and ViolationBreakdown's per-type rows.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 91,
+    "note": "Confirmed. ViolationBreakdown.tsx:91-98 renders a hand-rolled passed/warned/failed stacked bar as h-1.5 with bg-success/60 + bg-warning/70 + bg-destructive/70, while TrustDashboard.tsx:179-192 renders the identical concept as h-2 with bg-success/70 for all three segments. TrustDashboard mounts ViolationBreakdown at line 207, so both variants appear on the same Trust view. No shared SeverityBar primitive exists in src/components/ui/. The height delta alone could be intentional (overview vs per-row density), but the success-segment opacity drift (/70 vs /60) for the same semantic is accidental drift in duplicated component logic \u2014 exactly the rubric's P1 case. Proposed fix (shared SeverityBar primitive with optional height) is appropriate."
+   }
+  },
+  {
+   "title": "Centralized queryKeys shadowed by inline duplicates; queryKeys.runSession is dead while SessionsView invents its own keys",
+   "file": "frontend/src/components/observability/SessionsView.tsx",
+   "line": 20,
+   "severity": "P1",
+   "description": "CLAUDE.md states cache keys are centralized in src/lib/query-keys.ts ('add new keys there, don't inline them'), but the recently added surfaces inline them \u2014 including duplicating keys that already exist centrally: queryKeys.evalPresets (query-keys.ts:12) exists yet EvalRubricCard.tsx:35,102,374 inlines [\"eval-presets\"]; queryKeys.alertRules (query-keys.ts:13) exists yet AlertsCard.tsx:47,55 inlines [\"alert-rules\"]; queryKeys.runSession (query-keys.ts:23, [\"run-session\", id]) is completely unused while SessionsView.tsx:20 invents [\"session-runs\", sessionId] and :82 invents [\"run-sessions\"]; [\"guardrail-policies\"] is inlined in three files (SavedPolicies.tsx:67,72; PolicyTemplates.tsx:67; WorkflowGuardrailField.tsx:35); [\"observability-errors\"] is inlined in both app/observability/page.tsx:324 and TrustDashboard.tsx:58. Inline string keys that must match across files for invalidation to work is exactly the drift this convention prevents (the near-miss 'run-session' vs 'session-runs' shows it happening).",
+   "evidence": "queryKey: [\"session-runs\", sessionId],",
+   "fix": "Add the missing entries to lib/query-keys.ts (guardrailPolicies, guardrailPolicyTemplates, runSessions, sessionRuns(id), observabilityErrors, observabilityCosts, alertEvents), delete or repurpose the dead runSession key, and replace every inline literal with the queryKeys reference.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 20,
+    "note": "Verified every claim by grep. CLAUDE.md mandates centralizing cache keys in src/lib/query-keys.ts, and 20+ files do use queryKeys \u2014 but the cited surfaces inline literals, including exact duplicates of existing central keys: [\"eval-presets\"] at EvalRubricCard.tsx:35,102,374 despite queryKeys.evalPresets (query-keys.ts:12); [\"alert-rules\"] at AlertsCard.tsx:47,55 despite queryKeys.alertRules (:13); queryKeys.runSession (:23) has zero usages while SessionsView.tsx:20 uses [\"session-runs\", sessionId] and :82 uses [\"run-sessions\"]; [\"guardrail-policies\"] inlined in SavedPolicies.tsx:67,72, PolicyTemplates.tsx:67, WorkflowGuardrailField.tsx:35; [\"observability-errors\"] inlined in app/observability/page.tsx:324 and TrustDashboard.tsx:58. Cross-file invalidation (e.g. PolicyTemplates invalidating a key that SavedPolicies/WorkflowGuardrailField query) currently works only because the string literals happen to match \u2014 exactly the fragility the convention exists to prevent, and the dead runSession key alongside the invented run-sessions/session-runs variants shows the drift has already begun. Nothing is user-visibly broken today (invalidation strings all match), so not P0; P1 is right under 'duplicated ad-hoc logic that has already drifted' plus explicit CLAUDE.md convention violation. Proposed fix (add missing entries, delete dead runSession, replace literals) is correct."
+   }
+  },
+  {
+   "title": "PolicyTemplates and SavedPolicies hand-roll the SectionCard shell and drop the surface-card highlight every other card has",
+   "file": "frontend/src/components/guardrails/PolicyTemplates.tsx",
+   "line": 77,
+   "severity": "P1",
+   "description": "ui/section-card.tsx is the house recipe ('surface-card rounded-lg border border-border bg-surface shadow-elev-1' + hairline header with title/description/actions). PolicyTemplates.tsx:77-86 and SavedPolicies.tsx:101-109 rebuild this exact shell as raw <section>/<header> markup but omit the surface-card class, so these two cards lose the ::before inset top highlight (globals.css:274-284) that SectionCard, Card, and GlassCard all apply \u2014 a visible surface-treatment drift between the guardrails page's right column and every other card in the app. GuardrailPlayground.tsx:170 and 282 also hand-roll the shell (they do keep surface-card). Both PolicyTemplates and SavedPolicies map 1:1 onto SectionCard's title/description/children API.",
+   "evidence": "<section className=\"rounded-lg border border-border bg-surface shadow-elev-1\">\n  <header className=\"border-b border-border px-4 py-3\">",
+   "fix": "Replace the hand-rolled <section>/<header> in PolicyTemplates and SavedPolicies with <SectionCard title description>, passing the Sparkles icon inside the title node; at minimum add the missing surface-card class.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "note": "Verified. PolicyTemplates.tsx:77-86 and SavedPolicies.tsx:101-109 hand-roll the SectionCard shell as raw <section>/<header> and omit the surface-card class, so both lose the ::before inset top-edge highlight (globals.css:274-284, --surface-highlight defined for both themes at :128 dark and :239 light \u2014 clearly visible in the light theme at 0.5 alpha). SectionCard (ui/section-card.tsx:29), Card (ui/card.tsx:7), and GuardrailPlayground's two hand-rolled cards on the SAME page (GuardrailPlayground.tsx:170, 282) all keep surface-card, so the guardrails right column visibly drifts from its neighbors. Both components map 1:1 onto SectionCard's title/description/children API (title accepts ReactNode, so the Sparkles icon fits). This is exactly the rubric's P1 case: ad-hoc re-implementation of a shared primitive that has already drifted. Line 77 in the claim is exact.",
+    "corrected_line": 77
+   }
+  },
+  {
+   "title": "Observability PageHeader description is Triage-only copy, stays stale on Trust / Sessions / Cost views",
+   "file": "frontend/src/app/observability/page.tsx",
+   "line": 484,
+   "severity": "P1",
+   "description": "The PageHeader description is hardcoded to the Triage view's job ('Triage regressions, failures, and blocked runs\u2026') but renders unchanged while the view toggle switches to Trust, Sessions, or Cost & usage (lines 515\u2013520). A user on the Cost view reads a header telling them they're triaging failures \u2014 wrong orientation copy on a primary surface, and it contradicts each view's actual content (SLO tiles, session threads, spend tables).",
+   "evidence": "<PageHeader\n  title=\"Observability\"\n  description=\"Triage regressions, failures, and blocked runs \u2014 then open a run to dig in.\"",
+   "fix": "Derive the description from `view`, e.g. a `VIEW_COPY: Record<view, string>` map \u2014 triage: existing copy; trust: \"Quality, safety, cost, and reliability SLOs over the recent run window.\"; sessions: \"Multi-turn runs grouped by session.\"; cost: \"Spend, tokens, and latency by workflow, node, and model.\" \u2014 and pass `VIEW_COPY[view]`.",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 484,
+    "note": "Confirmed. page.tsx line 484 hardcodes the PageHeader description to Triage-only copy while lines 515-520 swap the body between Cost/Trust/Sessions/Triage views; the header never updates. Sub-views have their own section descriptions (CostDashboard line 212, TrustDashboard SectionCards), but those sit under a page-level header that still claims the user is triaging failures \u2014 contradictory orientation copy on a primary surface. Matches the rubric's P1 'stale terminology on a primary surface'; not P0 since it is orientation copy, not stale data presented as current. Proposed VIEW_COPY map fix is appropriate."
+   }
+  },
+  {
+   "title": "Observability view toggle not persisted in the URL \u2014 reload and deep links always reset to Triage",
+   "file": "frontend/src/app/observability/page.tsx",
+   "line": 272,
+   "severity": "P1",
+   "description": "The Triage/Trust/Sessions/Cost switch is plain useState, so /observability cannot deep-link any view: reload, back/forward, and shared links all land on Triage. The app already established the URL-param pattern for exactly this (templates honours ?filter= via window.location.search on mount, app/templates/page.tsx:450\u2013456, and the guardrails banner links to /templates?filter=guardrail). The gap is self-inflicted inside the page too: TrustDashboard's own footer link (TrustDashboard.tsx:277, 'Drill into per-run traces from any run') points at href=\"/observability\", which navigates the user off the Trust view back to Triage.",
+   "evidence": "const [view, setView] = useState<\"triage\" | \"trust\" | \"sessions\" | \"cost\">(\"triage\");",
+   "fix": "Initialize view from `new URLSearchParams(window.location.search).get(\"view\")` after mount (same pattern as templates/page.tsx) and `history.replaceState` a `?view=` param in setView's wrapper. Then update the TrustDashboard footer link to a real target (e.g. `/observability?view=triage` with copy that says so, or drop the self-link).",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 272,
+    "note": "Verified. (1) page.tsx:272 is exactly `const [view, setView] = useState<\"triage\" | \"trust\" | \"sessions\" | \"cost\">(\"triage\")` and the file has no useSearchParams/window.location/replaceState anywhere \u2014 the view toggle (role=\"tablist\", lines 455-476) is purely in-memory, so reload/back-forward/shared links always reset to Triage. (2) The precedent claim is accurate: templates/page.tsx (~453-458) reads ?filter= from window.location.search after mount specifically to honour cross-page CTAs, so the URL-param pattern is established in this codebase. (3) The TrustDashboard sub-claim also checks out: TrustDashboard.tsx:277 renders \"Drill into per-run traces from any run\" as a Link to href=\"/observability\" \u2014 i.e. a self-link from within the Trust view back to the page whose default is Triage; the copy promises drill-down it doesn't deliver. Not mitigated elsewhere: nothing else persists or restores the view (checked CommandPalette, nav-items, RunDetailView \u2014 all push bare \"/observability\"). Severity P1 fits the rubric as real UX friction on a primary surface (state loss on reload plus a misleading in-page link), though tab-persistence alone would be P2 \u2014 the misleading TrustDashboard footer link is what holds it at P1."
+   }
+  },
+  {
+   "title": "Settings still says 'Eval presets' in the page header, section nav, and command palette after the section was renamed 'Eval rubrics'",
+   "file": "frontend/src/app/settings/page.tsx",
+   "line": 202,
+   "severity": "P1",
+   "description": "The section itself is titled 'Eval rubrics' (EvalRubricCard.tsx:149) and all its actions say rubric ('New rubric', 'Rubric saved', 'Delete rubric?'), but three navigation surfaces still advertise the old name: the Settings PageHeader description ('\u2026eval presets, and alerts', settings/page.tsx:202), the SettingsNav anchor label ('Eval presets', SettingsNav.tsx:10), and the command palette's Settings entry ('Credentials, API auth, and evaluation presets', CommandPalette.tsx:121). Users searching for 'rubrics' find nav items that don't exist, and the nav label doesn't match the section heading it scrolls to. The canvas NodeInspector eval section also still labels the same rubric picker 'Eval preset' (NodeInspector.tsx:1896).",
+   "evidence": "description=\"Appearance, API access, credentials, eval presets, and alerts.\"",
+   "fix": "Rename all four sites to rubric terminology: settings/page.tsx:202 \u2192 '\u2026eval rubrics, and alerts.'; SettingsNav.tsx:10 label \u2192 'Eval rubrics'; CommandPalette.tsx:121 \u2192 '\u2026and eval rubrics'; NodeInspector.tsx:1896 label \u2192 'Eval rubric'. (The anchor id `settings-presets` can stay \u2014 only labels are user-facing.)",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 202,
+    "note": "Confirmed at all four cited sites. The section is titled \"Eval rubrics\" (EvalRubricCard.tsx:149, with rubric-wording body copy and id=\"settings-presets\"), but settings/page.tsx:202 says \"eval presets\", SettingsNav.tsx:10 labels the anchor \"Eval presets\" (pointing at the \"Eval rubrics\" heading), CommandPalette.tsx:121 says \"evaluation presets\", and NodeInspector.tsx:1896 labels the same custom-rubric picker \"Eval preset\". No mitigation found; classic post-rename terminology drift on primary nav surfaces, which the rubric explicitly rates P1."
+   }
+  },
+  {
+   "title": "RunDeck Stop/collapse controls live inside the horizontally scrolling step strip and scroll out of view during live runs",
+   "file": "frontend/src/components/canvas/run/RunDeck.tsx",
+   "line": 614,
+   "severity": "P1",
+   "description": "The run-lens header row is one `overflow-x-auto` container holding both the step strip (`<ol className=\"flex min-w-max flex-1\">`, each li `min-w-[138px] sm:min-w-[152px]`) and, after it in flow, the status/Stop/collapse cluster (line 636 `ml-auto flex shrink-0 ... border-l`). With ~5+ nodes the strip exceeds the deck width (5x152 + connectors + controls > 1000px), the container scrolls, and at the default scroll position the live elapsed timer, the Stop button (line 650) and the collapse toggle are pushed off-screen right \u2014 the user must discover horizontal scroll to stop a live run. min-w-max on the ol guarantees it never shrinks.",
+   "evidence": "<div className=\"flex min-h-[82px] items-center gap-3 overflow-x-auto border-b border-border px-4 py-3 sm:px-6\"> ... <ol ... className=\"flex min-w-max flex-1 items-center\">",
+   "fix": "Move the `ml-auto` controls cluster outside the overflow-x-auto element (wrap only the <ol> in a `min-w-0 flex-1 overflow-x-auto` div), or make the cluster `sticky right-0 bg-surface` so it stays pinned while the strip scrolls.",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "note": "Verified in RunDeck.tsx lines 614-675: the single overflow-x-auto header row contains both the min-w-max step strip and the shrink-0 controls cluster (elapsed timer, Stop at line 650, approvalSlot, collapse toggle). With enough steps (each li min-w-[152px]) the row overflows and at default scroll position the controls are clipped off-screen right; no sticky positioning or separate scroll wrapper mitigates it. Severity P1 (not P0) is correct because the always-visible canvas header renders RunControl with its own Stop button during live runs (WorkflowCanvas.tsx ~2169, RunControl.tsx line 71), so stopping is never truly blocked \u2014 but the collapse toggle, live timer, progress count, and Review-approval slot have no duplicates and become undiscoverable, which is genuine UX friction on a primary surface. Proposed fix (scroll only the ol) is sound."
+   }
+  },
+  {
+   "title": "NodeInspector sticky header floats inside the canvas panel's p-4 wrapper \u2014 16px see-through gutters when pinned, plus double horizontal padding on all fields",
+   "file": "frontend/src/components/canvas/NodeInspector.tsx",
+   "line": 1186,
+   "severity": "P1",
+   "description": "The inspector header is styled as a full-bleed docking bar (`sticky top-0 z-10 ... border-b bg-surface-elevated` with a category rule `absolute inset-y-0 left-0 w-[3px]`), but its only call site renders it inside `<div className=\"space-y-4 p-4\">` (WorkflowCanvas.tsx:2514) within the scroll container at WorkflowCanvas.tsx:2508. When the panel scrolls, the header pins at the scrollport top while form content scrolls visibly through the 16px gutters on either side of it, and the 3px category rule sits 16px away from the panel edge instead of hugging it. The inspector body also adds its own `px-4` (line 1235), so every field gets 32px padding per side \u2014 at the panel's 320px minimum width (useResizablePanel min: 320) content is squeezed to ~256px, making rows like the Reliability `grid grid-cols-3 gap-2` (line 2702) ~76px per numeric input.",
+   "evidence": "<div className=\"sticky top-0 z-10 flex items-center gap-3 overflow-hidden border-b border-border bg-surface-elevated px-5 py-4\"> ... <div className=\"space-y-4 px-4\">",
+   "fix": "Remove `p-4` from the configure tabpanel wrapper in WorkflowCanvas.tsx:2514 (NodeInspector already pads its own body via px-4) and add `p-4` locally to the EdgeInspector / multi-select branches, so the sticky header spans the full panel width.",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 1186,
+    "note": "Verified against code. NodeInspector.tsx:1186 renders the header as a full-bleed docking bar (sticky top-0 z-10, border-b, bg-surface-elevated, px-5, plus an absolute inset-y-0 left-0 w-[3px] category rule), and the body adds its own px-4 (line 1235). Its single call site (WorkflowCanvas.tsx:2553) sits inside <div className=\"space-y-4 p-4\"> (line 2514) within the overflow-y-auto scrollport (line 2508); InspectorMotionShell (NodeInspector.tsx:431-461) adds no compensating negative margins. Consequences confirmed: (a) when the panel scrolls, the header pins at the scrollport top but only spans the wrapper's content width \u2014 16px panel-background gaps on each side, the border-b stops short of the panel edges, and the 3px category rule floats 16px in from the edge, so the \"docking bar\" reads as a detached card; (b) double horizontal padding is real \u2014 body fields get 16+16=32px per side, header 16+20=36px; at useResizablePanel min 320 (WorkflowCanvas.tsx:282-288) field content is ~256px, and the Reliability grid grid-cols-3 gap-2 (NodeInspector.tsx:2702) yields ~80px numeric inputs. One overstatement in the claim: form content does NOT visibly scroll \"through\" the side gutters \u2014 it lives in the same p-4 wrapper so it shares the 16px inset and passes behind the header's opaque bg; the gutters just show static panel background. That softens the visual defect slightly but the core finding (header designed full-bleed but rendered inset; double padding squeezing a primary editing surface at min width) stands. Proposed fix is sound since NodeInspector already pads its own body, while the multi-select and EdgeInspector branches in the same tabpanel do rely on the wrapper padding and would need it locally. P1 is right: real UX friction on the primary node-config surface plus the intended category-rule/docking composition being visibly broken during scroll; not P0 (nothing unusable) and more than P2 polish."
+   }
+  },
+  {
+   "title": "PageHeader actions slot combines shrink-0 with flex-wrap \u2014 wrap can never trigger, run-detail header overflows horizontally at sm\u2013md widths",
+   "file": "frontend/src/components/ui/page-header.tsx",
+   "line": 45,
+   "severity": "P1",
+   "description": "A flex item with `shrink-0` keeps its single-line max-content width, so the `flex-wrap` on the same element is inert \u2014 in `sm:flex-row` mode the actions cluster never wraps. RunDetailView passes six controls (Back, feedback group, status Badge, TraceIdBadge, Export, Workflows \u2014 RunDetailView.tsx:296\u2013387), roughly 550px of chrome; between 640px and ~900px viewports the header overflows the page-container and forces horizontal page scroll. Same inert `shrink-0 flex-wrap` combo on the TraceNodeRow chip cluster (frontend/src/components/runs/TraceNodeRow.tsx:179 `flex shrink-0 flex-wrap items-center justify-end gap-1.5`), which instead squeezes the node label to near-zero before its chips ever wrap.",
+   "evidence": "<div className=\"flex shrink-0 flex-wrap items-center gap-2 sm:gap-3\">{actions}</div>",
+   "fix": "Drop `shrink-0` (or replace with `min-w-0 justify-end`) on the PageHeader actions container so flex-wrap can engage; same change on the TraceNodeRow chip cluster.",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 45,
+    "note": "Confirmed. page-header.tsx:45 has `flex shrink-0 flex-wrap` on the actions slot; with flex-basis:auto, shrink-0 pins the item at its single-line max-content width in sm:flex-row mode, so flex-wrap is inert above 640px (below 640px the section is flex-col, so the claimed sm-md window is exact). RunDetailView.tsx:295-387 passes ~6 controls including a non-compact TraceIdBadge (full 32-hex mono trace id badge + external-link button) and two default-size Buttons \u2014 realistically ~550-650px of chrome. page-container (max-w-7xl, px-4/sm:px-6, no overflow-x clip) and the section provide no mitigation, and the title column min-w-0 can only shrink to min-content, so the header overflows and forces horizontal page scroll at ~640-850px viewports. TraceNodeRow.tsx:179 confirmed to share the same inert combo; there the min-w-0+truncate label degrades to near-zero truncation instead of page overflow, as the finding states. P1 fits: real UX friction on a primary surface, not fully unusable. Proposed fix (drop shrink-0 / use min-w-0 justify-end) is correct."
+   }
+  },
+  {
+   "title": "Run payload text uses whitespace-pre-wrap without break-words \u2014 long unbroken tokens (URLs, ids, base64, minified JSON) overflow their bordered cards",
+   "file": "frontend/src/components/runs/RunDetailView.tsx",
+   "line": 517,
+   "severity": "P1",
+   "description": "`whitespace-pre-wrap` wraps only at whitespace; a single long token overflows the rounded/bordered card horizontally with no scroll or clip. This renders user-supplied and model-generated text, where unbroken tokens are routine. Sites (all verified, none have break-words/overflow): RunDetailView.tsx:517 (run input), :465 (approval review), :567 (final output <pre>); TraceNodeRow.tsx:359 (node output); ExplainFailureCallout.tsx:70 (explanation); RunResultsPanel.tsx:117 (approval review) and :221 (final output) \u2014 the last two live in the canvas right panel at 320\u2013520px width, where overflow is most likely. Contrast: HighlightedSample.tsx:170 and NodeInspector's pres correctly add break-words.",
+   "evidence": "<p className=\"whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-sm leading-6 text-foreground/90\">\n              {run.input_text}\n            </p>",
+   "fix": "Add `break-words` to all seven pre-wrap payload blocks (for the <pre> at RunDetailView.tsx:567 also works; alternatively give it overflow-x-auto).",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "note": "Verified. All seven cited pre-wrap payload blocks lack break-words/overflow handling: RunDetailView.tsx:517 (run input), :465 (approval review), :567 (final output pre); TraceNodeRow.tsx:359; ExplainFailureCallout.tsx:70; RunResultsPanel.tsx:117 and :221. No global word-break rule in globals.css and SectionCard adds no clipping, so a long unbroken token (URL/id/base64/minified JSON \u2014 routine in run payloads and model output) overflows the bordered card horizontally. The repo's own convention proves this is drift, not intent: HighlightedSample.tsx:170 and NodeOutputPeek.tsx:120 use whitespace-pre-wrap break-words, and TraceNodeRow's other pre blocks use overflow-auto. Minor caveat: RunResultsPanel.tsx:221 sits inside a GlassCard with overflow-hidden, so there the failure mode is clipped/unreadable text rather than layout blowout; the other six sites have no clipping ancestor, and the RunResultsPanel sites render in the narrow canvas side panel where it is most visible. P1 fits: real UX friction plus duplicated pattern that has already drifted from the in-repo standard. Proposed fix (add break-words; or overflow-x-auto for the pre at 567) is correct."
+   }
+  },
+  {
+   "severity": "P1",
+   "dimension": "live",
+   "title": "Canvas marks itself dirty on selection-only interaction \u2014 'Leave site?' guard fires after just clicking a node",
+   "file": "frontend/src/components/canvas/WorkflowCanvas.tsx",
+   "line": null,
+   "description": "Opened a workflow whose status bar read 'Saved', clicked the Trigger node (selection only \u2014 no move/edit) and toggled the app theme; navigating away then triggered the browser 'Leave site? unsaved changes' dialog. Selection/theme-only interactions are marking the graph dirty, so users get scary unsaved-changes prompts after read-only visits.",
+   "fix": "Exclude selection-only changes (and any non-graph state) from the dirty computation \u2014 compare persisted graph fields (node positions/data/edges) rather than React Flow's full state, or ignore `selected` flags when diffing.",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "severity": "P1",
+   "dimension": "live",
+   "title": "Cross-view metric contradictions: same metric, different values and windows on adjacent observability tabs",
+   "file": "frontend/src/app/observability/page.tsx",
+   "line": null,
+   "description": "Observed live: Trust tab shows latency p99 5.7s / cost $0.2418 ('last 500 runs'); Cost & usage tab shows p99 9,114ms / total spend $0.4427 ('1,279 runs'); Triage tiles show p50 192ms ('last 500') while Cost shows p50 217ms ('935 samples'); eval pass rate is '\u2014' on Triage/home ('last 100 runs') but 50% on Trust ('last 500'). Each view is internally consistent, but adjacent tabs contradict each other with only quiet window captions.",
+   "fix": "Pick one canonical window for headline tiles across views (the /trust window), or make the window a visible, shared control ('Window: last 500 runs') so differing numbers are explained where they differ.",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "severity": "P1",
+   "dimension": "live",
+   "title": "PASS RATE tile shows '\u2014' beside '15 eval runs' when no run carries a pass/fail verdict",
+   "file": "frontend/src/components/home/HomeOverviewStrip.tsx",
+   "line": null,
+   "description": "API-confirmed: quality reports eval_run_count=15 but eval_pass_count=0 and eval_fail_count=0 (no thresholds configured), so eval_pass_rate=None renders as '\u2014' directly above the caption '15 eval runs' (home PASS RATE tile and the observability EVAL PASS RATE tile). Reads as broken data: 15 evals but a dash.",
+   "fix": "When eval_run_count > 0 but no verdicts exist, fall back to showing the average score ('avg 3.2 / 5') or caption honestly: '15 scored \u00b7 no pass/fail thresholds set'.",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "severity": "P1",
+   "dimension": "live",
+   "title": "'Live updates offline \u2014 values may be stale' banner flaps and fires during initial SSE connect",
+   "file": "frontend/src/providers/ObservabilityStreamProvider.tsx",
+   "line": null,
+   "description": "Observed live: the observability badge flipped 'Updates offline' \u2192 'Live updates' \u2192 'Updates offline' across consecutive views within one minute, and the alarming full-width offline banner shows on every fresh page load before the SSE stream finishes connecting (stream emits nothing for seconds). The claim 'values may be stale' is wrong on first paint \u2014 the snapshot was just fetched.",
+   "fix": "Add a 'connecting' grace state (no banner for the first ~5s / until first failure), debounce the offline flip (e.g. 10s of sustained disconnect), and soften copy while data is fresh.",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "severity": "P1",
+   "dimension": "live",
+   "title": "Eval rubrics list lost pagination in the settings refactor \u2014 unbounded list of dozens of rubrics",
+   "file": "frontend/src/components/settings/EvalRubricCard.tsx",
+   "line": 141,
+   "description": "The old inline eval-presets section paginated custom presets 5 per page with a pager; EvalRubricCard renders every custom rubric in one unbounded list (dev DB shows a full screen of identical 'Enriched' rows). A long list buries the editor form and 'Test on a sample' panel beneath it.",
+   "fix": "Restore pagination (5\u20138/page like the old PRESETS_PAGE_SIZE) or cap with a max-height scroll region + count, keeping the editor visible.",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "severity": "P1",
+   "dimension": "live",
+   "title": "Cost breakdown lists duplicate same-name workflow rows with no disambiguation",
+   "file": "frontend/src/components/observability/CostBreakdownTable.tsx",
+   "line": null,
+   "description": "Observed live on Cost & usage \u2192 By workflow: 'Half Hourly' appears 5\u00d7, 'Cron Flow' 4\u00d7, 'My Agent Workflow' 2\u00d7 \u2014 distinct workflow ids sharing one name, rendered as identical rows. Users cannot tell which row is which workflow.",
+   "fix": "Disambiguate rows that share a name (append a short id suffix or created date), or aggregate by name with an expandable breakdown; also consider linking each row to the workflow.",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "title": "TrustDashboard renders a permanent loading spinner if /trust errors",
+   "file": "frontend/src/components/observability/TrustDashboard.tsx",
+   "line": 63,
+   "severity": "P1",
+   "description": "The Trust view's only guard is `isLoading || !trust`. When api.getObservabilityTrust rejects (request() in lib/api.ts:89 throws on non-OK), isLoading goes false, trust stays undefined, and the entire Trust tab is stuck on 'Loading trust metrics\u2026' forever \u2014 an error presented as an in-progress load, with no retry and no message. The sibling CostDashboard (CostDashboard.tsx:101-112) already handles isLoading/isError/refetch correctly with ApiConnectionState, so the pattern exists in the codebase.",
+   "evidence": "if (isLoading || !trust) {\n    return <LoadingState label=\"Loading trust metrics\u2026\" />;\n  }",
+   "fix": "Destructure `isError, error, refetch` from the useQuery, keep the LoadingState for `isLoading` only, and render `<ApiConnectionState description=\"Trust metrics could not be loaded\u2026\" error={error} onRetry={() => void refetch()} />` on error, mirroring CostDashboard.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 63,
+    "note": "Confirmed. TrustDashboard.tsx:63 guards only with `isLoading || !trust`; the useQuery (lines 51-55) never destructures isError/error/refetch. api.ts request() throws on non-OK (line 89), so on error isLoading=false and trust=undefined, leaving the entire Trust tab on 'Loading trust metrics\u2026' permanently \u2014 an error presented as an in-progress load with no message or retry. Sibling CostDashboard.tsx (~lines 87-112) already uses the correct isLoading/isError/ApiConnectionState/refetch pattern, so this is real drift from an established in-repo pattern. No parent error boundary or other mitigation exists. P1 is correct per rubric (missing error state / real UX friction); not P0 since the background refetchInterval eventually recovers if the API returns and no wrong data is shown."
+   }
+  },
+  {
+   "title": "ViolationBreakdown shows an infinite 'Loading violations\u2026' skeleton on query error",
+   "file": "frontend/src/components/observability/ViolationBreakdown.tsx",
+   "line": 49,
+   "severity": "P1",
+   "description": "Same broken guard as TrustDashboard: `if (isLoading || !data)` returns the list skeleton. If /guardrails/violations 500s, the SectionCard shows a shimmering 'Loading violations\u2026' list forever inside the Trust view \u2014 the safety drill-down silently never arrives and the user has no way to know it failed or retry.",
+   "evidence": "if (isLoading || !data) {\n    return (\n      <SectionCard title=\"Guardrail violations\" description=\"By rail type across recent runs\">\n        <LoadingState variant=\"list\" label=\"Loading violations\u2026\" />",
+   "fix": "Add `isError, refetch` to the destructure; on error render the SectionCard with an inline error line ('Couldn't load guardrail violations') plus a Retry button instead of the LoadingState.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 49,
+    "note": "Confirmed. ViolationBreakdown.tsx destructures only { data, isLoading } (line 43) and the guard at line 49 (`if (isLoading || !data)`) returns the LoadingState skeleton, so a failed /guardrails/violations request leaves a permanent 'Loading violations\u2026' shimmer with no error message or retry. No mitigation exists: QueryProvider sets no throwOnError (so app/error.tsx never catches query errors), and TrustDashboard renders the component bare. Sibling CostDashboard.tsx (lines 87-101) already implements the isError + refetch error branch, proving this is drift from the established pattern, not intent. Severity P1 matches the rubric (missing error state / real UX friction, but not wrong data presented as current)."
+   }
+  },
+  {
+   "title": "Failed errors query renders green-check 'No failure clusters' \u2014 false healthy signal",
+   "file": "frontend/src/app/observability/page.tsx",
+   "line": 600,
+   "severity": "P1",
+   "description": "Both callers of FailureClusters pass an errored query as an empty success: app/observability/page.tsx:600-604 and TrustDashboard.tsx:210-214 do `clusters={errors?.clusters ?? []} loading={errorsLoading}` with no isError. When getObservabilityErrors fails, FailureClusters.tsx:39-43 renders a CheckCircle2 in text-success with 'No failure clusters in the recent window.' \u2014 the reliability panel asserts the system is clean precisely when the health check itself failed. Neither call site reads `isError` from the query.",
+   "evidence": "<FailureClusters\n        clusters={errors?.clusters ?? []}\n        failedRunsScanned={errors?.failed_runs_scanned ?? 0}\n        loading={errorsLoading}\n      />",
+   "fix": "Add an `error?: boolean` prop to FailureClusters that renders 'Couldn't load failure clusters' (no success check) with a retry affordance; pass `error={errorsIsError}` from both call sites (observability page and TrustDashboard).",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 600,
+    "note": "Verified. observability/page.tsx:323-327 and TrustDashboard.tsx:57-61 both destructure only {data, isLoading} from the errors query and pass clusters={errors?.clusters ?? []} loading={errorsLoading} (page.tsx:600-604, TrustDashboard.tsx:210-214) with no isError. The page-level isError gate at page.tsx:396 only covers the summary query, and TrustDashboard's loading gate only covers the trust query, so a failed /api/observability/errors call is not mitigated anywhere. FailureClusters.tsx:39-43 then renders CheckCircle2 text-success + 'No failure clusters in the recent window.' \u2014 a false healthy signal when the endpoint errored. P1 fits the rubric (missing error state / misleading success affordance on a reliability panel); proposed fix (error prop + retry) is appropriate."
+   }
+  },
+  {
+   "title": "SessionsView shows 'No sessions yet' EmptyState when the sessions query fails",
+   "file": "frontend/src/components/observability/SessionsView.tsx",
+   "line": 81,
+   "severity": "P1",
+   "description": "The sessions query destructures only `data, isLoading`; `sessions` defaults to []. On a /runs/sessions failure the Sessions tab confidently renders the onboarding EmptyState ('No sessions yet \u2014 pass a session_id\u2026', line 102-108), telling the user their sessions don't exist rather than that the request failed. The nested SessionRuns query (line 19-25) has the same hole: on error it renders 'No runs.' for a session that demonstrably has runs (its run_count is displayed on the same row).",
+   "evidence": "const { data, isLoading } = useQuery({\n    queryKey: [\"run-sessions\"],\n    queryFn: api.getRunSessions,",
+   "fix": "Destructure `isError, refetch` in both queries; in SessionsView render an inline error branch with Retry before the EmptyState check, and in SessionRuns render 'Couldn't load runs for this session' instead of 'No runs.' on error.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 81,
+    "note": "Verified in /Users/himanshu/Git/aegis/frontend/src/components/observability/SessionsView.tsx. SessionsView (line 81) destructures only {data, isLoading}; on query error data is undefined, sessions falls back to [] (line 86), and the isLoading?:sessions.length===0 chain (lines 98-108) renders the 'No sessions yet' onboarding EmptyState \u2014 presenting a request failure as an authoritative empty account. SessionRuns (lines 19-25) has the identical hole: on error it renders 'No runs.' (line 25) for a session whose run_count is shown on the same row. No mitigation exists: QueryProvider (src/providers/QueryProvider.tsx) sets no error defaults/throwOnError, and there is no error boundary. The correct pattern already exists on the SAME observability page \u2014 CostDashboard.tsx line 87 destructures {isError, error, refetch} and renders an error branch (line 101), as do observability/page.tsx, templates/page.tsx, and app/page.tsx \u2014 so this is drift, not convention. P1 is right per rubric ('missing error state'); not P0 because it only misleads during a backend failure, not in the steady state."
+   }
+  },
+  {
+   "title": "AlertsCard renders 'No alert rules yet' on rules-query error; alert events fail invisibly",
+   "file": "frontend/src/components/settings/AlertsCard.tsx",
+   "line": 47,
+   "severity": "P1",
+   "description": "`rules` defaults to [] and isError is never read, so a failed listAlertRules renders the Bell EmptyState 'No alert rules yet' (lines 241-248) \u2014 an operator checking their alerting after an incident is told their rules are gone. The events query (line 48-52) is worse: `events = []` and the 'Recent alert events' section is gated on `events.length > 0` (line 251), so a failure silently hides fired alerts with zero indication anything is missing.",
+   "evidence": "const { data: rules = [], isLoading: rulesLoading } = useQuery({ queryKey: [\"alert-rules\"], queryFn: api.listAlertRules });",
+   "fix": "Read `isError` from both queries; render an inline destructive-text error row with a Retry action in place of the rules EmptyState, and under the events section show 'Couldn't load recent alert events' when that query errors.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 47,
+    "note": "Verified. AlertsCard.tsx:47 destructures only data/isLoading from the rules query and line 48-52 only data from the events query; isError is never read. On rules fetch failure the component falls through to the 'No alert rules yet' EmptyState (lines 241-248), presenting an error as an empty state; on events fetch failure the 'Recent alert events' section (gated on events.length > 0 at line 251) silently disappears. No mitigation exists: src/providers/QueryProvider.tsx configures no QueryCache onError/throwOnError, and app/error.tsx only catches render errors. Mutations in the same file toast errors, so this is a gap specific to these two reads. P1 per rubric (missing error state)."
+   }
+  },
+  {
+   "title": "EvalRubricCard shows 'No custom rubrics yet.' when the presets query fails",
+   "file": "frontend/src/components/settings/EvalRubricCard.tsx",
+   "line": 34,
+   "severity": "P1",
+   "description": "`presets` defaults to [] with no isError handling, so a failed listEvalPresets renders 'No custom rubrics yet.' (line 155). A user who has authored rubrics is told they don't exist; they may recreate one (create will collide or duplicate) or believe their rubrics were deleted. Mutations in this file are handled well (pending flags + failure toasts), which makes the missing list error state stand out.",
+   "evidence": "const { data: presets = [], isLoading } = useQuery({\n    queryKey: [\"eval-presets\"],\n    queryFn: api.listEvalPresets,\n  });",
+   "fix": "Destructure `isError, refetch`; add an error branch before the `custom.length === 0` check: 'Couldn't load rubrics' + Retry button.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 34,
+    "note": "Verified. /Users/himanshu/Git/aegis/frontend/src/components/settings/EvalRubricCard.tsx:34 destructures only `data: presets = []` and `isLoading`; the render (lines 152-155) branches isLoading -> custom.length === 0 -> list. When listEvalPresets fails, React Query sets status to 'error' (isLoading false, data undefined -> []), so the component renders the empty-state copy 'No custom rubrics yet.' (line 155), presenting a fetch failure as an authoritative empty list. No mitigation exists: QueryProvider (src/providers/QueryProvider.tsx) has no queryCache/global onError, there is no error boundary on the settings surface (only workflows/[id] has one), and no other settings card handles isError either. The contrast the finding cites is accurate \u2014 all mutations in this file surface failures via toasts, while the list query silently lies. Severity P1 is correct per rubric ('missing loading/empty/error state'); not P0 because the failure mode requires a backend/network error and the rest of the card remains usable. Minor extra: the queryKey [\"eval-presets\"] is inlined rather than centralized in src/lib/query-keys.ts, contrary to CLAUDE.md convention \u2014 worth fixing in the same patch. Proposed fix (isError branch + retry via refetch) is appropriate."
+   }
+  },
+  {
+   "title": "SavedPolicies shows 'No saved policies yet' EmptyState when the policies query errors",
+   "file": "frontend/src/components/guardrails/SavedPolicies.tsx",
+   "line": 63,
+   "severity": "P1",
+   "description": "`policies` defaults to [] and isError is unread, so on a failed listGuardrailPolicies the guardrails page renders the Bookmark EmptyState 'No saved policies yet \u2014 Configure a guardrail above, then save it to reuse the setup.' (lines 142-148). This also cascades: WorkflowGuardrailField (canvas trigger section) reads the same [\"guardrail-policies\"] cache, so the user is misled on two surfaces about their policies not existing.",
+   "evidence": "const {\n    data: policies = [],\n    isLoading,\n  } = useQuery({\n    queryKey: [\"guardrail-policies\"],",
+   "fix": "Destructure `isError, refetch` and render an error branch ('Couldn't load saved policies' + Retry) between the isLoading and empty checks.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 63,
+    "note": "Confirmed. In SavedPolicies.tsx the query destructures only `data: policies = []` and `isLoading` (lines 63-69); `isError` is never read. On a failed listGuardrailPolicies, data is undefined so policies = [] and the component falls into the `policies.length === 0` branch, rendering the Bookmark EmptyState \"No saved policies yet\" (lines 142-148) \u2014 a misleading state presented as authoritative. No mitigation exists: QueryProvider (src/providers/QueryProvider.tsx) has no global onError/error boundary, only staleTime/refetchOnWindowFocus defaults. An explicit error branch is the established codebase pattern (isError handled in app/page.tsx, observability/page.tsx, templates/page.tsx, CostDashboard.tsx, DeploySheet.tsx), so this is a genuine missing-error-state gap, not an intentional convention. P1 fits the rubric (\"missing loading/empty/error state\"); not P0 because the query retries and the surface is secondary, and the user isn't blocked from other actions. Proposed fix (isError/refetch branch between isLoading and empty checks) is appropriate."
+   }
+  },
+  {
+   "title": "PolicyTemplates has neither an empty state nor an error state \u2014 renders a bare hairline box",
+   "file": "frontend/src/components/guardrails/PolicyTemplates.tsx",
+   "line": 92,
+   "severity": "P1",
+   "description": "After isLoading, the component unconditionally renders `<ul className=\"divide-y divide-border overflow-hidden rounded-md border border-border\">` and maps templates. If getGuardrailPolicyTemplates fails (templates defaults to []) or legitimately returns zero templates, the card shows an empty bordered rectangle with no content, no message, and no retry \u2014 indistinguishable from a rendering bug. Every neighboring card (SavedPolicies, AlertsCard) at least has an EmptyState.",
+   "evidence": "{isLoading ? (\n          <LoadingState variant=\"list\" label=\"Loading templates\u2026\" />\n        ) : (\n          <ul className=\"divide-y divide-border overflow-hidden rounded-md border border-border\">",
+   "fix": "Read `isError, refetch` from the query; render an error branch with Retry on failure, and an `EmptyState compact` ('No templates available') when `templates.length === 0`, only rendering the bordered ul when there are items.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 92,
+    "note": "Verified. PolicyTemplates.tsx reads only { data: templates = [], isLoading } from useQuery (line 53) and after loading unconditionally renders the bordered <ul> (line 92) mapping templates. If api.getGuardrailPolicyTemplates fails (backend down, auth error), the query errors, data stays [], and the card shows a bare empty hairline rectangle with no message and no retry \u2014 indistinguishable from a rendering bug. No isError/refetch handling and no EmptyState import, while the sibling SavedPolicies.tsx uses EmptyState (line 143). One caveat weakens half the claim: templates are a hardcoded backend list (backend/app/services/guardrail_policy_templates.py POLICY_TEMPLATES), so a legitimate zero-template response can't happen in practice \u2014 the empty-state branch is defensive polish. But the missing error state alone is a genuine gap and matches the P1 rubric line 'missing loading/empty/error state'. Proposed fix (isError + retry branch; EmptyState when empty) is appropriate."
+   }
+  },
+  {
+   "title": "Run approval Approve/Reject buttons have no pending state \u2014 double-submit and approve/reject race",
+   "file": "frontend/src/components/runs/RunDetailView.tsx",
+   "line": 470,
+   "severity": "P1",
+   "description": "In the 'Approval required' panel, both buttons fire `await api.approveRun(...)` from onClick with no in-flight flag: neither button is disabled while a decision is pending, and there is no loading label. A double-click sends the approval twice, and a user can click Approve then Reject (or vice-versa) while the first request is in flight, racing two contradictory decisions on a human-approval gate. Every other mutation in this file (feedback thumbs at line 317, `disabled={feedbackGiven !== null}`) and across the app (ExperimentsPanel's single `pending` flag) is double-click-safe \u2014 this one governs the highest-stakes action.",
+   "evidence": "<Button\n                onClick={async () => {\n                  try {\n                    await api.approveRun(runId, { approved: true });",
+   "fix": "Add `const [deciding, setDeciding] = useState<\"approve\" | \"reject\" | null>(null)`; set it before the call, clear in finally, and put `disabled={deciding !== null}` on both buttons with 'Approving\u2026'/'Rejecting\u2026' labels.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 470,
+    "note": "Confirmed. RunDetailView.tsx lines 470-500: both Approve and Reject buttons call api.approveRun from async onClick with no in-flight flag, no disabled prop, and no loading label; the panel only disappears after the request resolves. Double-click double-submits and Approve-then-Reject can race contradictory decisions on the human-approval gate. No mitigation elsewhere: the shared Button primitive has no pending-state handling, and the same file's feedback buttons do guard (disabled={feedbackGiven !== null}), showing this is a drift from the file's own pattern. P1 fits the rubric (missing loading/pending state, real UX friction) rather than P0 since the control is visible and functional."
+   }
+  },
+  {
+   "title": "ExperimentsPanel: datasets and versions query failures are completely silent",
+   "file": "frontend/src/components/canvas/ExperimentsPanel.tsx",
+   "line": 59,
+   "severity": "P1",
+   "description": "The datasets query (line 59-62) and versions query (line 71-74) destructure only `data` with [] defaults \u2014 no isLoading, no isError. If listDatasets fails, the dataset Select, 'Add test input' row, and the Capture control all silently vanish (they're gated on `datasets.length > 0` / `activeDataset`), making the panel look like the user has no datasets; creating a 'replacement' dataset then collides with the invisible existing one. If listVersions fails, the baseline picker is empty and Regression dead-ends with the toast 'Pick a baseline version' that cannot be satisfied. Only the experiments history query (line 63) handles loading/empty.",
+   "evidence": "const { data: datasets = [] } = useQuery({\n    queryKey: [\"datasets\", workflowId],\n    queryFn: () => api.listDatasets(workflowId),\n  });",
+   "fix": "Destructure `isError, refetch` on both queries and render a compact inline error row inside the Datasets / Run experiment sections ('Couldn't load datasets' / 'Couldn't load versions' + retry) when they fail.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 59,
+    "note": "Verified in /Users/himanshu/Git/aegis/frontend/src/components/canvas/ExperimentsPanel.tsx. The datasets query (lines 59-62) and versions query (lines 71-74) destructure only `data` with [] defaults \u2014 no isLoading/isError handling, unlike the experiments query (line 63) which handles loading and empty. No mitigation elsewhere: /Users/himanshu/Git/aegis/frontend/src/providers/QueryProvider.tsx configures the QueryClient with no QueryCache/onError handler, so a failed listDatasets or listVersions is completely silent. Downstream consequences match the claim: the dataset Select is gated on `datasets.length > 0` (line 167) and the Add-item and Capture rows on `activeDataset` (lines 198, 219), so a datasets failure makes the panel indistinguishable from \"no datasets yet\"; a versions failure leaves the baseline Select empty and `launch(\"regression\")` dead-ends on the unsatisfiable \"Pick a baseline version\" toast (line 141-143). This is exactly the rubric's P1 case: missing error state producing real UX friction (misleading-looking empty UI), but not P0 since nothing wrong is presented as current data and the rest of the panel remains usable. Proposed fix (inline error row + retry on both queries) is appropriate."
+   }
+  },
+  {
+   "title": "Dead Tailwind v4 syntax across vendored shadcn primitives; tw-animate-css ships 54 raw @utility blocks",
+   "file": "frontend/src/components/ui/popover.tsx",
+   "line": 33,
+   "severity": "P1",
+   "description": "Several ui/ primitives were vendored from a Tailwind v4 shadcn registry and carry v4-only syntax that compiles to nothing under this v3 setup (verified with a compile probe against the real globals.css + config): `outline-hidden` (popover.tsx:33), `origin-(--radix-*-transform-origin)` (popover.tsx:33, tooltip.tsx:45), `data-open:`/`data-closed:` animation variants (popover.tsx:33, dialog.tsx:64, tooltip.tsx:45, sheet.tsx:65, select.tsx, dropdown-menu.tsx), and trailing-important `h-10!`/`rounded-md!`/`pl-2.5!` (command.tsx:74). Additionally `@import \"tw-animate-css\"` (globals.css:1) is a v4-only library: the probe build emits ZERO `.animate-in`/`fade-in-0`/`zoom-in-95`/`slide-in-*` utilities \u2014 even dialog's overlay, which uses correct v3 `data-[state=open]:animate-in` syntax, animates nothing \u2014 and passes 54 raw `@utility` at-rules through to the shipped CSS as dead bytes browsers ignore. Net effect: all overlay open/close transitions are silent no-ops and the command palette input sizing overrides don't apply.",
+   "evidence": "origin-(--radix-popover-content-transform-origin) ... outline-hidden duration-100 ... data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95",
+   "fix": "Rewrite to v3 syntax: `outline-hidden`\u2192`outline-none`, `data-open:`\u2192`data-[state=open]:`, `h-10!`\u2192`!h-10`, drop the `origin-(--\u2026)` shorthand for `origin-[var(--\u2026)]`; replace tw-animate-css with the v3 `tailwindcss-animate` plugin (add to tailwind.config plugins) or delete the animation classes outright.",
+   "dimension": "tokens",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 33,
+    "note": "Confirmed empirically. popover.tsx:33 matches the claim verbatim (origin-(--radix-...), outline-hidden, data-open:/data-closed: variants), and the same v4 syntax recurs in tooltip.tsx:45, dialog.tsx:64, sheet.tsx:40/65, select.tsx:73/119, dropdown-menu.tsx (6 sites), command.tsx:74/78/158. Tailwind is v3.4.1 with plugins: [] and no tailwindcss-animate; tw-animate-css 1.4.0's dist is pure v4 (@theme inline + @utility with --value()). I ran a compile probe with the real tailwind.config.ts + globals.css: valid v3 classes in the probe content (outline-none, !h-10) were emitted, but zero .animate-in/fade-in-0/zoom-in-95/slide-in-*/outline-hidden/data-[state=open] rules were generated \u2014 even dialog overlay's correct v3-syntax data-[state=open]:animate-in is a no-op because the animate-in utility itself doesn't exist \u2014 and exactly 54 raw @utility at-rules pass through to the output CSS as dead bytes. Net effect verified: all overlay open/close animations silently do nothing, and command palette input sizing overrides (h-10!/rounded-md!/pl-2.5!) never apply. Not mitigated anywhere. P1 is correct: real design-system/infrastructure breakage and shipped dead code, but no control is unusable or misleading (Radix still functions), so not P0."
+   }
+  },
+  {
+   "title": "Hardcoded white sheen (36 sites, 21 files) instead of the theme-flipping --surface-highlight token \u2014 light theme loses all card/input lift",
+   "file": "frontend/src/components/ui/input.tsx",
+   "line": 11,
+   "severity": "P1",
+   "description": "Nearly every ui/ primitive hardcodes the top-edge sheen as `shadow-[inset_0_1px_0_rgba(255,255,255,0.025\u20130.04)]` \u2014 36 occurrences across 21 files: ui/input.tsx:11, textarea.tsx:10, select.tsx:47, badge.tsx:5, tabs.tsx:39, switch.tsx:20, filter-chip.tsx:17, alert.tsx:54, input-group.tsx:17, stat-card.tsx:24, dialog.tsx:109, sheet.tsx:92+102, command.tsx:73+74+177, dropdown-menu.tsx:203, form-field.tsx:42+50, layout/ShortcutsHelp.tsx:62, layout/CommandPalette.tsx:141, observability/TraceIdBadge.tsx:47, results/RunResultsPanel.tsx (8 sites), results/GuardrailEventsPanel.tsx:67+71, app/workflows/new/page.tsx:425+452+454 \u2014 plus the same pattern as `before:bg-white/10` in popover.tsx:33 and dialog.tsx:64. globals.css defines theme-aware tokens for exactly this (`--surface-highlight`: 0.035 white in dark \u2192 rgba(255,253,248,0.5) in light; `--surface-overlay-highlight` is defined in both themes and referenced NOWHERE). Newer canvas code already uses the token form (`shadow-[inset_0_1px_0_var(--surface-highlight)]` in RunDeck.tsx:605, WorkflowDataPanel.tsx:188, WorkflowQualityPanel.tsx:140, WorkflowCanvas.tsx:2103) \u2014 proven drift. In the warm-light theme, 3.5% white over #f1ede6 paper is invisible, so every input/select/badge/tab/dialog-footer silently loses the intended 50%-warm-white sheen.",
+   "evidence": "bg-surface-input px-3 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
+   "fix": "Mechanical replace: `shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]` (and the 0.025/0.03/0.04 variants) \u2192 `shadow-[inset_0_1px_0_var(--surface-highlight)]`; popover/dialog `before:bg-white/10` \u2192 `before:bg-[var(--surface-overlay-highlight)]`.",
+   "dimension": "tokens",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 11,
+    "note": "Verified in full. input.tsx:11 matches the claimed class exactly. grep confirms exactly 36 occurrences of shadow-[inset_0_1px_0_rgba(255,255,255,...)] across 21 files, plus before:bg-white/10 in popover.tsx:33 and dialog.tsx:64. globals.css defines --surface-highlight per theme (dark: rgba(246,239,229,0.035); light: rgba(255,253,248,0.5)) and --surface-overlay-highlight (0.045 dark / 0.6 light) which is referenced nowhere outside its definitions. Newer canvas code (RunDeck.tsx:605/725, WorkflowDataPanel.tsx:188/318, WorkflowQualityPanel.tsx:140/175, WorkflowCanvas.tsx:2103) already uses the var(--surface-highlight) form \u2014 drift is real, not hypothetical. Light theme is shipped and user-reachable (AppRail toggle, CommandPalette command, layout.tsx theme bootstrap), so the 3.5% white sheen genuinely vanishes on light paper where the token would render a 50% warm-white highlight. P1 is correct per rubric: clear token violation + theme breakage + already-drifted duplication; not P0 since it is a subtle visual-lift loss, nothing broken or inaccessible."
+   }
+  },
+  {
+   "title": "Decorative gradients on chrome (StatCard, AppRail) violate the flat-elevation rule",
+   "file": "frontend/src/components/ui/stat-card.tsx",
+   "line": 17,
+   "severity": "P1",
+   "description": "The design system explicitly bans decorative gradients ('Flat elevation... no decorative gradient lighting' \u2014 globals.css invariants; body even forces `background-image: none`). StatCard \u2014 a shared primitive rendered on the home page and all four observability dashboards \u2014 paints `bg-gradient-to-b from-surface-elevated to-surface`, and the primary nav rail does the same (AppRail.tsx:25: `border-r border-border bg-gradient-to-b from-surface-elevated to-surface`). These are the only two `bg-gradient-*` uses in the codebase; every comparable card (SectionCard, .panel, .dashboard-panel) is a flat token surface with the sanctioned ::before sheen, which StatCard already applies via its `surface-card` class \u2014 the gradient double-dips on top of it.",
+   "evidence": "surface-card min-h-24 rounded-lg border border-border bg-gradient-to-b from-surface-elevated to-surface p-4 shadow-elev-1",
+   "fix": "Replace `bg-gradient-to-b from-surface-elevated to-surface` with `bg-surface-elevated` in both stat-card.tsx:17 and AppRail.tsx:25; the existing `surface-card` sheen already supplies the lift.",
+   "dimension": "tokens",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 17,
+    "note": "Verified. stat-card.tsx:17 contains exactly the quoted string (\"surface-card ... bg-gradient-to-b from-surface-elevated to-surface ... shadow-elev-1\"), and AppRail.tsx:25 has the same gradient on the nav rail; a repo grep confirms these are the only two bg-gradient-* uses in src. globals.css states the invariants: \"Flat elevation\" (invariant #2), \"The canvas stays matte; no decorative gradient lighting\", \"restrained edge light keeps surfaces tangible without gradients\" (light theme block), and body forces background-image: none. Every comparable primitive is flat: SectionCard uses \"surface-card ... bg-surface\", .panel is bg-surface-elevated, .dashboard-panel is bg-surface \u2014 all with the sanctioned .surface-card ::before 1px inner sheen (var(--surface-highlight)), which StatCard already applies, so the gradient indeed double-dips on top of the house lift recipe. Mitigations checked: the gradient uses theme tokens so both themes render (no breakage), but that doesn't cure the flat-elevation violation. P1 fits the rubric (clear design-system violation on a shared primitive used on home + all observability dashboards, plus the primary nav rail); not P0 since nothing is broken or inaccessible. Proposed fix (bg-surface-elevated in both files) is consistent with .panel and safe."
+   }
+  },
+  {
+   "title": "Home page StatCard numerics render without font-mono/tabular-nums (drifted from every other dashboard)",
+   "file": "frontend/src/components/home/HomeOverviewStrip.tsx",
+   "line": 77,
+   "severity": "P1",
+   "description": "HomeOverviewStrip passes all four StatCard values \u2014 workflow count (line 77), run count (86), pass-rate percentage (112), and cost via formatCostUsd (137) \u2014 with no font-mono/tabular-nums wrapper, and neither StatCard's value element (stat-card.tsx:30, `text-[30px] font-semibold`) nor NumberTween applies it. Every other StatCard consumer got this right by hand-wrapping: OpsStatRow.tsx:106, TrustDashboard.tsx:80, CostDashboard.tsx:186 all use `<span className=\"font-mono tabular-nums\">`. So the app's landing surface violates the 'ALL numerics use font-mono + tabular-nums' rule while duplicating the styling responsibility across four callers \u2014 classic primitive-level gap.",
+   "evidence": "value={<NumberTween value={workflows.length} />}",
+   "fix": "Add `font-mono tabular-nums` to StatCard's value element (stat-card.tsx:30) so the primitive owns numeric styling; the redundant per-caller wrappers in OpsStatRow/TrustDashboard/CostDashboard can then be dropped.",
+   "dimension": "tokens",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 77,
+    "note": "Verified. HomeOverviewStrip.tsx passes all four numeric values (lines 77, 86, 112, 137) to StatCard with no font-mono/tabular-nums: NumberTween (src/components/motion/NumberTween.tsx) renders a bare span with only the caller-supplied className, and StatCard's value element (src/components/ui/stat-card.tsx:30) is `text-[30px] font-semibold leading-none text-foreground` with no mono styling; nothing in globals.css applies mono globally (its own header comment at line ~18 even states the mono+tabular rule for all data). Every other StatCard consumer hand-wraps: OpsStatRow.tsx:106/121/126/142/150, TrustDashboard.tsx:80/99/108/117/126, CostDashboard.tsx:186/191 all use `font-mono tabular-nums` spans. So the home landing surface genuinely drifts from the design-system rule and from the app's other dashboards. Severity P1 matches the rubric explicitly (\"numerics without mono/tabular\"). Proposed fix (move styling into StatCard's value element and drop caller wrappers) is sound; one caveat: CostDashboard/TrustDashboard also apply tone colors in the same spans, so those wrappers can only drop the mono classes, not the spans themselves."
+   }
+  },
+  {
+   "title": "AlertsCard timestamps bypass the app's date formatters \u2014 'fired' badge shows time-of-day with no date",
+   "file": "frontend/src/components/settings/AlertsCard.tsx",
+   "line": 194,
+   "severity": "P1",
+   "description": "Every other surface (run-row.tsx:107-109, RunDetailView.tsx:432-441, VersionHistory.tsx:192-193, ExperimentsPanel.tsx:324-325, SessionsView, ViolationBreakdown) uses formatRelativeTime with formatFullTimestamp as a hover title. AlertsCard alone uses raw calls: line 194 renders `fired {new Date(rule.last_fired_at).toLocaleTimeString()}` inside a sans-serif Badge \u2014 a bare time of day (\"3:42:11 PM\") that becomes ambiguous/misleading once the rule last fired on a previous day \u2014 and line 256 renders alert-event times with raw new Date(...).toLocaleString(). Two more sites duplicate the raw pattern instead of the helpers: app/settings/page.tsx:353 (`{new Date(entry.at).toLocaleString()}` in the API-key audit log) and components/results/EvalTrendChart.tsx:41 (tooltip title).",
+   "evidence": "fired {new Date(rule.last_fired_at).toLocaleTimeString()}",
+   "fix": "Line 194: `fired {formatRelativeTime(rule.last_fired_at)}` and add title={formatFullTimestamp(rule.last_fired_at)} (Badge already supports title via span). Line 256, settings/page.tsx:353, EvalTrendChart.tsx:41: replace raw toLocaleString() with formatFullTimestamp()/formatRelativeTime() from lib/format-date.ts.",
+   "dimension": "typography",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 194,
+    "note": "Verified. AlertsCard.tsx:194 renders `fired {new Date(rule.last_fired_at).toLocaleTimeString()}` in a sans Badge (no font-mono/tabular-nums, no title) \u2014 ambiguous once the rule last fired on a prior day. Line 256 uses raw toLocaleString() for alert events. The app-wide convention (formatRelativeTime + title=formatFullTimestamp, font-mono tabular-nums) is real and used in 11 files (confirmed run-row.tsx:104-110 pattern). Cited extra raw sites also confirmed: settings/page.tsx:353 and EvalTrendChart.tsx:41 (plus uncited NodeInspector.tsx:355/362). No mitigating wrapper exists. P1 fits the rubric: numerics/timestamps without mono+tabular, drifted duplicate logic, real ambiguity but not presenting wrong info as current (P0)."
+   }
+  },
+  {
+   "title": "Eight ad-hoc duration formatters have drifted \u2014 same run-detail page mixes \"1.2 s\" and \"1.2s\"; observability tiles disagree on ms-vs-seconds",
+   "file": "frontend/src/components/runs/TraceNodeRow.tsx",
+   "line": 56,
+   "severity": "P1",
+   "description": "Duration/latency formatting is re-implemented in eight places and the outputs have diverged: TraceNodeRow.tsx:54-57 formatMs \u2192 \"940 ms\"/\"1.2 s\" (space before unit); RunDetailView.tsx:44-50 formatDuration \u2192 same spaced style; TraceTimeline.tsx:26-30 formatTick \u2192 \"940ms\"/\"1.2s\" (no space) \u2014 so on ONE run-detail page the axis ticks read \"1.2s\" while the row labels beside them read \"1.2 s\"; TrustDashboard.tsx:23-26 ms() \u2192 \"940ms\"/\"1.2s\" with toFixed(1); CostDashboard.tsx:61-64 formatLatency \u2192 \"12,345ms\" (never switches to seconds); OpsStatRow.tsx:75-77 \u2192 `${toLocaleString()}ms` (never seconds), so the observability Triage tab shows \"Latency p50 12,345ms\" while the adjacent Trust tab shows \"12.3s\" for the same magnitude; RunDeck.tsx:140-146 formatDuration \u2192 trailing-zero-trimmed \"1.2s\"; RunNodeResultCard.tsx:112 inline \u2192 toFixed(2) \"0.94s\". This is duplicated ad-hoc logic that has already drifted across sibling surfaces.",
+   "evidence": "return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`;",
+   "fix": "Add one formatDurationMs(ms) to src/lib/format.ts (canonical: \"940ms\" below 1s, \"1.2s\"/\"12s\" above, no space, toLocaleString for large ms) and replace all eight local implementations with it.",
+   "dimension": "typography",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 56,
+    "note": "Verified all eight implementations. Evidence line matches TraceNodeRow.tsx:56 exactly. The worst drift is confirmed on a single surface: RunDetailView renders TraceTimeline, whose axis ticks use formatTick (\"940ms\"/\"1.2s\", no space, TraceTimeline.tsx:26-29) while the TraceNodeRow labels rendered inside the same timeline use formatMs (\"940 ms\"/\"1.2 s\", spaced, TraceNodeRow.tsx:54-57); RunDetailView.tsx:44-49 adds a third spaced copy on the same page. Cross-tab drift also confirmed: OpsStatRow.tsx:75-77 and CostDashboard.tsx:61-63 never convert to seconds (\"12,345ms\") while TrustDashboard.tsx:25 shows \"12.3s\" for the same magnitude. RunDeck.tsx:140-145 (trailing-zero trim) and RunNodeResultCard.tsx:112 (toFixed(2)) are two more variants. src/lib/format.ts already exists as the canonical formatting home (formatCostUsd) but has no duration formatter, so nothing mitigates this. Matches the P1 rubric item \"duplicated ad-hoc component logic that has already drifted\" \u2014 not P0 (values are correct, just inconsistently rendered) and more than P2 polish given it is visible on one page simultaneously. Proposed fix (single formatDurationMs in src/lib/format.ts) is appropriate."
+   }
+  },
+  {
+   "title": "StatCard trend line renders numerics in sans-serif \u2014 violates mono+tabular rule on every dashboard tile",
+   "file": "frontend/src/components/ui/stat-card.tsx",
+   "line": 33,
+   "severity": "P1",
+   "description": "StatCard's trend renders as plain `text-xs text-muted` with no font-mono/tabular-nums, but nearly every call site passes numeric strings: TrustDashboard.tsx:84 `${trust.eval_passed}/${trust.eval_evaluated} evaluated`, :103 `${trust.guardrail_blocked_runs} blocked \u00b7 ${g.warned} warned`, :112 `p95 ${ms(...)} \u00b7 p50 ${ms(...)}`, :130 `${trust.failed_runs} failed of ...`; OpsStatRow.tsx:77 `p95 12,345ms`, :82 `1,234 runs scanned`, :146 `N blocked`; CostDashboard.tsx:187 `1,234 runs`, :197 `1,234 samples`; HomeOverviewStrip.tsx:78/100/129/139. The design system says ALL numerics (latency, counts, percentiles) use font-mono + tabular-nums; the values above these trends are mono, so the mixed rows visibly clash. Precedent for mono numeric-with-words lines already exists (TrustDashboard.tsx:145 uses `font-mono text-2xs tabular-nums` for \"12 pass / 3 fail\").",
+   "evidence": "{trend && <p className=\"mt-1 text-xs text-muted\">{trend}</p>}",
+   "fix": "Change the trend paragraph in stat-card.tsx to `mt-1 font-mono text-2xs tabular-nums text-muted` (one-line fix that corrects every tile), matching the existing mono metadata rows in TrustDashboard/OpsStatRow.",
+   "dimension": "typography",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 33,
+    "note": "Confirmed. stat-card.tsx:33 renders trend as plain `text-xs text-muted` with no font-mono/tabular-nums. Verified every call site (TrustDashboard 84/103/112/130, OpsStatRow 107/122/146, CostDashboard 187/197, HomeOverviewStrip 78/98/128/138) passes numeric-bearing strings, while the value above each trend is caller-wrapped in font-mono tabular-nums \u2014 so the mixed sans/mono rows appear on every dashboard tile. Precedent exists (TrustDashboard's pass/fail row uses font-mono text-2xs tabular-nums) and no global style mitigates it. Rubric explicitly lists \"numerics without mono/tabular\" as P1. Proposed one-line fix in stat-card.tsx is correct and covers all tiles (a few word-only trends like \"in + out\" would also go mono, which matches the existing mono metadata-row precedent)."
+   }
+  },
+  {
+   "title": "Home overview stat values are sans-serif and ungrouped \u2014 drift from every other StatCard value in the app",
+   "file": "frontend/src/components/home/HomeOverviewStrip.tsx",
+   "line": 137,
+   "severity": "P1",
+   "description": "All observability StatCards wrap their value in `<span className=\"font-mono tabular-nums\">` (CostDashboard.tsx:186, OpsStatRow.tsx:106/121/126, TrustDashboard.tsx:80-126). The home overview strip does not: line 137 passes the cost string bare (`value={costs ? formatCostUsd(costs.total_cost_usd) : DASH}`), and lines 77/86/112 pass <NumberTween> with no mono className \u2014 NumberTween.tsx:48-52 renders a plain span. So the home page shows dollar amounts and run counts in the sans display face while /observability shows the identical metrics in mono. Additionally NumberTween.tsx:50 uses `display.toFixed(precision)`, so a large run_count renders as \"12345\" on home while OpsStatRow.tsx:90 renders the same summary.run_count as \"12,345\" via toLocaleString.",
+   "evidence": "value={costs ? formatCostUsd(costs.total_cost_usd) : DASH}",
+   "fix": "Wrap all four HomeOverviewStrip values in <span className=\"font-mono tabular-nums\"> (or pass className=\"font-mono tabular-nums\" to NumberTween), and change NumberTween's render to display.toLocaleString(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision }) so tweened counts keep thousands grouping.",
+   "dimension": "typography",
+   "verdict": {
+    "is_real": true,
+    "severity": "P1",
+    "corrected_line": 137,
+    "note": "Verified in code. HomeOverviewStrip.tsx:137 passes the cost string bare (value={costs ? formatCostUsd(costs.total_cost_usd) : DASH}), and lines 77/86/112 pass <NumberTween> with no className; NumberTween.tsx renders a plain <span> with display.toFixed(precision) (no grouping, no mono). StatCard (src/components/ui/stat-card.tsx) applies only text-[30px] font-semibold to the value slot \u2014 no font-mono \u2014 and no global CSS (surface-card, etc.) mitigates it. Every observability StatCard value is explicitly wrapped in <span className=\"font-mono tabular-nums\"> (CostDashboard.tsx:186-205, OpsStatRow.tsx:106/121/126/142/150, TrustDashboard.tsx:80-126), and OpsStatRow.tsx:90 renders the same summary.run_count via toLocaleString(), so home would show \"12345\" while /observability shows \"12,345\" in mono. This directly violates the design rule \"ALL numerics use font-mono + tabular-nums\" and the rubric explicitly lists \"numerics without mono/tabular\" as P1. Proposed fix (mono wrap + toLocaleString with min/max fraction digits in NumberTween) is sound."
+   }
+  },
+  {
+   "title": "NodePalette category filter pills expose active state visually only (no aria-pressed)",
+   "file": "frontend/src/components/canvas/NodePalette.tsx",
+   "line": 115,
+   "severity": "P2",
+   "description": "The \"All\" pill (line 115-121) and per-category pills (123-139) toggle the palette filter, but the active state is conveyed only via pillActive styling / inline category color \u2014 there is no aria-pressed (or role=\"radiogroup\"/aria-checked), so assistive tech cannot tell which filter is active. The shared FilterChip primitive already sets aria-pressed={Boolean(active)} (ui/filter-chip.tsx:15), and CanvasRail buttons set aria-pressed too; this ad-hoc pill re-implementation dropped the state.",
+   "evidence": "<button\n          type=\"button\"\n          onClick={() => setActiveCat(\"all\")}\n          className={cn(pillClasses, activeCat === \"all\" && pillActive)}\n        >",
+   "fix": "Add aria-pressed={activeCat === \"all\"} / aria-pressed={activeCat === c} to the pill buttons (and wrap the row in role=\"group\" aria-label=\"Filter nodes by category\"), or reuse FilterChip.",
+   "dimension": "a11y",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 115,
+    "note": "Confirmed. In NodePalette.tsx the \"All\" pill (lines 115-121) and the seven category pills (123-139) toggle activeCat but expose no aria-pressed/aria-checked and no role=\"group\"/radiogroup on the container (line 114) \u2014 active state is conveyed only via pillActive classes and inline category color-mix styling. The shared FilterChip primitive (src/components/ui/filter-chip.tsx:15) sets aria-pressed={Boolean(active)}, so this is an ad-hoc re-implementation that dropped the state. Nothing mitigates it elsewhere (no aria-current, no live region; the visual-only state is invisible to assistive tech). Severity P2 is right: the filter remains operable and its effect (list changes) is perceivable, so it's polish/minor a11y rather than a blocking failure; one could argue P1 for the FilterChip duplication drift, but the FilterChip API (label-only) can't render the count+category-color content, so the re-implementation is semi-intentional \u2014 keeping P2. Fix as proposed: add aria-pressed to both button variants and role=\"group\" aria-label on the pill row."
+   }
+  },
+  {
+   "title": "EvalRubricCard 'Score sample' async result appears without aria-live announcement",
+   "file": "frontend/src/components/settings/EvalRubricCard.tsx",
+   "line": 308,
+   "severity": "P2",
+   "description": "Clicking \"Score sample\" fires an async LLM-judge preview; the result block ({preview && \u2026} at line 308, and the RAG block at 332) simply appears in the DOM with no aria-live/role=\"status\", so a screen-reader user gets no notification that scoring finished (or errored \u2014 errors render as plain text inside the same silent block at 311-313). The codebase convention for exactly this pattern is VerdictPanel.tsx:41 and GuardrailPlayground.tsx:337, which put aria-live=\"polite\" on the async verdict region.",
+   "evidence": "{preview && (\n          <div className=\"rounded-lg border border-border bg-surface-input p-3\">",
+   "fix": "Wrap the preview/RAG result area in a container with aria-live=\"polite\" (matching VerdictPanel.tsx:41), so scores, skip messages, and errors are announced when they land.",
+   "dimension": "a11y",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 308,
+    "note": "Verified. In /Users/himanshu/Git/aegis/frontend/src/components/settings/EvalRubricCard.tsx, the \"Score sample\" button (runPreview, lines 111-144) sets preview/ragPreview state, and the result blocks at lines 308-331 and 332-353 render with no aria-live/role=\"status\". Screen-reader users get no announcement when scoring finishes: successful scores, skip messages (preview.message, line 311), and payload-level errors (preview.error, line 313) all land silently. Only fetch-rejection errors are mitigated via toast.error (line 140, sonner has its own live region) \u2014 the in-DOM error path at 312-313 is not. The cited codebase convention is confirmed: VerdictPanel.tsx:41 and GuardrailPlayground.tsx:337 both put aria-live=\"polite\" on exactly this async-verdict pattern; WorkflowCanvas.tsx:2100 and RunDetailView.tsx:289 also use sr-only aria-live regions. No other mitigation found (no live region wrapper in SettingsSection or parents). P2 is right: non-blocking a11y polish \u2014 the control itself is usable and the button label toggles Scoring\u2026/Score sample, so it does not rise to a P0 blocking failure; it is an inconsistency with the established aria-live pattern rather than a hard barrier."
+   }
+  },
+  {
+   "title": "Invented h-7 Button size repeated in 5 places despite existing xs (h-6) and sm (h-8) variants",
+   "file": "frontend/src/components/guardrails/PolicyTemplates.tsx",
+   "line": 117,
+   "severity": "P2",
+   "description": "ui/button.tsx defines size xs ('h-6 ... text-xs') and sm ('h-8 px-3 text-xs'), but five call sites apply size=\"sm\" then override to an ad-hoc in-between height: PolicyTemplates.tsx:117 (className=\"h-7 px-2\") and :128 (\"h-7 gap-1.5 px-2\"), SavedPolicies.tsx:174 (\"h-7 gap-1.5 px-2\"), EvalRubricCard.tsx:172 (\"h-7 gap-1.5 px-2\"), WorkflowQualityPanel.tsx:90 (\"h-7 text-xs\"). This is a scattered pseudo-size that the variant system was built to prevent, and it will not track future Button changes.",
+   "evidence": "variant=\"ghost\"\nsize=\"sm\"\nclassName=\"h-7 px-2\"",
+   "fix": "Standardize these row-action buttons on size=\"xs\" (or size=\"sm\" unmodified); if h-7 is genuinely needed, add it once as a real size variant in ui/button.tsx and drop the className overrides.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 117,
+    "note": "Verified. ui/button.tsx defines xs (h-6, line 26) and sm (h-8, line 27); no h-7 size exists. All five cited call sites use <Button size=\"sm\"> then override with an ad-hoc h-7 className: PolicyTemplates.tsx:117 (\"h-7 px-2\") and :128 (\"h-7 gap-1.5 px-2\"), guardrails/SavedPolicies.tsx:174, settings/EvalRubricCard.tsx:172 (finding said evals/, actual path is src/components/settings/), and canvas/WorkflowQualityPanel.tsx:90 (finding said evals/, actual path is src/components/canvas/). These are the only 5 h-7 button overrides in src (6 grep hits incl. one non-override). It is a genuine scattered pseudo-size bypassing the variant system, but purely a 2-4px sizing consistency nit with no drift, theme, or a11y impact \u2014 P2 (polish) is the right severity per the rubric."
+   }
+  },
+  {
+   "title": "Select size=\"sm\" variant exists but is bypassed with className h-8 text-xs; Input has no small variant so the same override is scattered",
+   "file": "frontend/src/components/canvas/ExperimentsPanel.tsx",
+   "line": 225,
+   "severity": "P2",
+   "description": "ui/select.tsx already supports size=\"sm\" (select.tsx:40, data-[size=sm]:h-8 ... data-[size=sm]:text-xs), yet ExperimentsPanel bypasses it with raw overrides: SelectTrigger className=\"h-8 flex-1 text-xs\" (line 225, capture filter) and \"h-8 w-full min-w-0 text-xs\" (line 266, baseline version). ui/input.tsx has no size variant at all (fixed h-10, input.tsx:11), so the compact form pattern is re-invented per site: ExperimentsPanel.tsx:186,204, RunsTable.tsx:58 (\"h-8 pl-8 text-xs\"), WorkflowDataPanel.tsx:280, QuickAddMenu.tsx:238, RunControl.tsx:182 (\"h-8 font-mono text-xs\"), WorkflowNameEditor.tsx:105 (\"h-8 max-w-[16rem] text-sm\" \u2014 drifted to text-sm). Every override site can silently diverge from the panel-density spec.",
+   "evidence": "<SelectTrigger className=\"h-8 flex-1 text-xs\" aria-label=\"Capture filter\">",
+   "fix": "Use size=\"sm\" on the two ExperimentsPanel SelectTriggers (keep only layout classes like flex-1), and add a size=\"sm\" (h-8 text-xs) variant to ui/input.tsx, then replace the seven h-8 className overrides with it.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "note": "Verified. select.tsx (line 40/47) exposes size=\"sm\" (data-[size=sm]:h-8/text-xs plus tighter pl-2.5 pr-2 padding), yet ExperimentsPanel.tsx:225 and :266 bypass it with raw h-8/text-xs overrides \u2014 which also miss the sm padding, so they already render slightly off from a real sm trigger. RunControl.tsx:167 uses size=\"sm\" correctly on the same canvas surface, confirming inconsistency. input.tsx has no size variant (fixed h-10 text-sm) and the h-8 compact override is hand-rolled at all seven cited sites, with WorkflowNameEditor.tsx:105 already drifted to text-sm. Genuine consistency finding, no functional/theme breakage \u2014 P2 is correct."
+   }
+  },
+  {
+   "title": "Sibling settings cards render their empty state two different ways: bare paragraph vs EmptyState primitive",
+   "file": "frontend/src/components/settings/EvalRubricCard.tsx",
+   "line": 155,
+   "severity": "P2",
+   "description": "On the same /settings page, AlertsCard.tsx:243-248 uses the shared EmptyState primitive for zero alert rules (compact, icon, title, description), while EvalRubricCard.tsx:155 renders a bare <p className=\"text-sm text-muted\">No custom rubrics yet.</p> for zero rubrics \u2014 no icon, no guidance, different visual weight for the identical situation one card apart. SavedPolicies (guardrails page) also uses EmptyState for its zero state, making EvalRubricCard the odd one out among list-of-saved-items cards.",
+   "evidence": "<p className=\"text-sm text-muted\">No custom rubrics yet.</p>",
+   "fix": "Replace the paragraph with <EmptyState compact icon={Pencil} title=\"No custom rubrics yet\" description=\"Create one below \u2014 rubrics plug into evaluation nodes.\" /> to match AlertsCard and SavedPolicies.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 155,
+    "note": "Verified. EvalRubricCard.tsx:155 renders a bare <p className=\"text-sm text-muted\">No custom rubrics yet.</p>, while its sibling on the same /settings page (AlertsCard.tsx:242-247) and the analogous guardrails card (SavedPolicies.tsx:143-148) both use the shared EmptyState primitive with compact/icon/title/description for the identical zero-saved-items state. EvalRubricCard is the only list-of-saved-items card not using the primitive; the compact variant exists for exactly this in-card use. P2 is correct: minor consistency polish, empty case still communicated. Proposed fix works as-is (Pencil already imported)."
+   }
+  },
+  {
+   "title": "Hover-revealed destructive delete icon-button duplicated verbatim in two files, with a third drifted variant in AlertsCard",
+   "file": "frontend/src/components/guardrails/SavedPolicies.tsx",
+   "line": 183,
+   "severity": "P2",
+   "description": "The 'ghost trash button revealed on row hover' is copy-pasted: SavedPolicies.tsx:183-190 and EvalRubricCard.tsx:178-185 share identical markup (className=\"focus-ring rounded-md p-1.5 text-muted opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100\", h-4 Trash2). AlertsCard.tsx:216-236 implements a third variant of the same action that has drifted: always visible (no opacity gating), no rounded-md/padding, and a smaller h-3.5 icon \u2014 so delete affordances differ between adjacent settings cards. ui/button.tsx already ships icon-xs/icon-sm sizes that these bypass entirely.",
+   "evidence": "className=\"focus-ring rounded-md p-1.5 text-muted opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100\"",
+   "fix": "Extract one shared row-delete control (e.g. <Button variant=\"ghost\" size=\"icon-xs\" className=\"hover:text-destructive\"> wrapped in a RowDeleteButton with the hover-reveal classes) and use it in SavedPolicies, EvalRubricCard, and AlertsCard so visibility and sizing match.",
+   "dimension": "consistency",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 183,
+    "note": "Verified. SavedPolicies.tsx:183-190 and EvalRubricCard.tsx:178-185 contain byte-identical raw <button> markup (focus-ring rounded-md p-1.5 text-muted opacity-0 ... group-hover:opacity-100, Trash2 h-4). AlertsCard.tsx:216-235 is a drifted third variant: always visible (no opacity gating), no rounded-md/p-1.5, transition-colors instead of transition-opacity, smaller h-3.5 icon \u2014 so delete affordances differ between adjacent settings cards (EvalRubricCard vs AlertsCard). ui/button.tsx does ship icon-xs (size-6) and icon-sm sizes that all three bypass. Not mitigated: no shared RowDeleteButton exists. Severity P2 is right: all variants keep aria-label, focus-ring, and focus-visible reveal, so nothing is broken or inaccessible \u2014 it is styling drift of a small control, i.e. polish/consistency rather than P1 friction."
+   }
+  },
+  {
+   "title": "Same guardrail engine has three different display names across Playground, canvas inspector, and Trust drill-down",
+   "file": "frontend/src/components/guardrails/GuardrailPlayground.tsx",
+   "line": 233,
+   "severity": "P2",
+   "description": "The `rules` guardrail type is labeled 'Rules' in the Playground's Type select (GuardrailPlayground.tsx:233), 'Keyword rules' in the same page's Active-policy/Verdict copy (guardrailTypeLabel, line 71), 'Keyword block' on the preset card (line 33), 'Rule-based (keywords, regex, PII)' in the canvas inspector engine select (NodeInspector.tsx:2332), and 'keyword rules' in ViolationBreakdown (ViolationBreakdown.tsx:16). Likewise `presidio` is 'Presidio PII' in the select (line 234), 'PII scan' in guardrailTypeLabel (line 73), and 'PII (presidio)' in ViolationBreakdown (line 18). A user picks 'Rules', then the verdict says 'Tested Keyword rules' and the Trust dashboard reports 'keyword rules' \u2014 three names for one thing across the pick \u2192 test \u2192 monitor loop.",
+   "evidence": "<SelectItem value=\"rules\">Rules</SelectItem>\n<SelectItem value=\"presidio\">Presidio PII</SelectItem>",
+   "fix": "Create one shared label map (e.g. `GUARDRAIL_TYPE_LABELS` in src/lib) with a single name per type ('Keyword rules', 'PII scan', 'Prompt injection', 'Moderation', 'LLM classifier', 'Structured output') and use it in GuardrailPlayground's select + guardrailTypeLabel, ViolationBreakdown.typeLabel, and the NodeInspector engine select (keeping inspector parentheticals as suffixes).",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "note": "Verified all cited strings exactly: GuardrailPlayground.tsx:233 'Rules' / :234 'Presidio PII' in the Type select, guardrailTypeLabel (lines 71/73) 'Keyword rules'/'PII scan', preset labels (lines 33/41) 'Keyword block'/'PII scan', NodeInspector.tsx:2332/2334 'Rule-based (keywords, regex, PII)'/'Presidio PII (entity detection)', ViolationBreakdown.tsx:16/18 'keyword rules'/'PII (presidio)'. No shared label map exists in src/ \u2014 three independent ad-hoc label switches for the same GuardrailType enum have drifted, giving the rules engine 4-5 different names across the pick/test/monitor loop. Genuine terminology inconsistency; P2 (wording polish) is the right severity since nothing is misleading or broken. Proposed shared GUARDRAIL_TYPE_LABELS map is a sensible fix.",
+    "corrected_line": 233
+   }
+  },
+  {
+   "title": "\"Run a workflow\" CTAs on Observability navigate to the create-workflow page, not a run action",
+   "file": "frontend/src/app/observability/page.tsx",
+   "line": 508,
+   "severity": "P2",
+   "description": "Both the no-telemetry GettingStartedBanner (primaryHref=\"/workflows/new\", primaryLabel=\"Run a workflow\", lines 508\u2013509) and the Cost view empty state (line 516: `<CostDashboard primaryCtaHref=\"/workflows/new\" primaryCtaLabel=\"Run a workflow\" />`) promise a run but land on the blank 'Create workflow' builder. For a user who already has workflows but no runs (the common way to reach this state), the correct destination is their existing workflow's canvas/Run, and the label misdescribes where the button goes.",
+   "evidence": "primaryHref=\"/workflows/new\"\nprimaryLabel=\"Run a workflow\"",
+   "fix": "Either relabel to match the destination ('Create a workflow') or point the CTA at \"/\" (workflows home) with label 'Open a workflow to run it'. Apply the same to the CostDashboard props at line 516.",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 508,
+    "note": "Verified. observability/page.tsx lines 508-509 pass primaryHref=\"/workflows/new\" with primaryLabel=\"Run a workflow\" to GettingStartedBanner, and line 516 passes the same href/label pair to CostDashboard. /workflows/new (src/app/workflows/new/page.tsx) is purely a create/import/describe builder page with no run action, so the label misdescribes the destination. Notably, CostDashboard's own default label is \"Build a workflow\" (CostDashboard.tsx lines 75-76) \u2014 an accurate label already exists and the observability page deliberately overrides it with the mismatched \"Run a workflow\". Mitigation check: no other logic redirects users with existing workflows to their canvas; a user with workflows but no runs gets sent to a blank builder. It is a wording/label-vs-destination mismatch, not a broken link or misleading data surface, so P2 (polish/copy) is the right severity per the rubric."
+   }
+  },
+  {
+   "title": "Settings 'No credentials yet.' / 'No custom rubrics yet.' empty states are bare paragraphs with no fix-it guidance, unlike sibling sections",
+   "file": "frontend/src/app/settings/page.tsx",
+   "line": 371,
+   "severity": "P2",
+   "description": "Two settings sections render empties as a lone `<p className=\"text-sm text-muted\">` that names the emptiness but not the remedy: Credentials ('No credentials yet.', settings/page.tsx:371) and Eval rubrics ('No custom rubrics yet.', EvalRubricCard.tsx:155). The Alerts section on the same page uses the shared EmptyState primitive with actionable copy ('No alert rules yet' / 'Add a rule above \u2014 breaches are logged\u2026', AlertsCard.tsx:242\u2013247), as do SavedPolicies and SessionsView. This is both an ad-hoc re-implementation of the EmptyState primitive and empty-state copy that fails to say how to fix the emptiness (both forms sit below the list, unreferenced).",
+   "evidence": "<p className=\"text-sm text-muted\">No credentials yet.</p>",
+   "fix": "Replace both paragraphs with `<EmptyState compact icon={\u2026} title=\"No credentials yet\" description=\"Add one below \u2014 Slack, Discord, Email, and Postgres nodes reference credentials by name.\" />` (and the rubric equivalent pointing at the 'New rubric' form below).",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 371,
+    "note": "Confirmed. frontend/src/app/settings/page.tsx:371 renders `<p className=\"text-sm text-muted\">No credentials yet.</p>` and EvalRubricCard.tsx:155 renders the same pattern for rubrics, while AlertsCard.tsx:242-247 on the same settings page uses the shared EmptyState primitive (compact variant exists in src/components/ui/empty-state.tsx) with fix-it copy pointing at the form. The ad-hoc paragraphs are not visually broken (they use tokens), and section descriptions give partial context, so this is polish-level inconsistency + non-actionable empty-state copy \u2014 P2 is the right severity."
+   }
+  },
+  {
+   "title": "Workflow guardrail policy picker is a dead end when the user has no saved policies",
+   "file": "frontend/src/components/canvas/WorkflowGuardrailField.tsx",
+   "line": 86,
+   "severity": "P2",
+   "description": "When `listGuardrailPolicies` returns empty, the trigger-node select shows only 'None' and the hint says 'Attach a saved policy to guard every agent, workflow-wide.' \u2014 but nothing in the UI says where saved policies come from. The component's own docstring knows the answer ('adopt one from the guardrail playground's templates first', line 30) yet the copy never surfaces it, so a first-time user has an empty dropdown with no path forward. Empty-state copy that fails to say how to fix the emptiness.",
+   "evidence": "{policyId\n  ? \"Applied to every agent's model call across this workflow.\"\n  : \"Attach a saved policy to guard every agent, workflow-wide.\"}",
+   "fix": "When `policies.length === 0`, change the hint to 'No saved policies yet \u2014 adopt one on the Guardrails page.' and link the phrase to /guardrails (Next Link with focus-ring).",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 86,
+    "note": "Verified. In /Users/himanshu/Git/aegis/frontend/src/components/canvas/WorkflowGuardrailField.tsx the hint at lines 86-90 matches the quoted evidence exactly; when listGuardrailPolicies returns [], the Select renders only the 'None' item (lines 58-65) and nothing in the component distinguishes the empty case or points anywhere. Saved policies are in fact only created by adopting templates on the Guardrails page (src/components/guardrails/PolicyTemplates.tsx: 'adopt one to add an editable copy to your saved policies'), and the component's own docstring (line 30-31) states this, so the dead-end claim is accurate and not mitigated elsewhere. It is a copy/empty-state polish issue, not broken or misleading UI, so P2 per the rubric is right. Proposed fix (conditional hint + Link to /guardrails with focus-ring) is reasonable; /guardrails exists as an app route."
+   }
+  },
+  {
+   "title": "Alert rule builder uses lowercase placeholders as the only visible labels ('threshold', 'window (min)')",
+   "file": "frontend/src/components/settings/AlertsCard.tsx",
+   "line": 120,
+   "severity": "P2",
+   "description": "The Alerts rule-builder inputs have no visible <Label>; the fields are identified only by placeholders 'threshold' (line 120), 'window (min)' (line 126), and 'baseline window (min)' (line 148) \u2014 lowercase fragments that disappear once the (pre-filled!) values exist, so on first render the user actually sees '0.5' and '60' with no field names at all. Every other form on the same settings page pairs Inputs with Label components and uses example-style or sentence-case placeholders ('your-aegis-api-key', 'Webhook URL (optional \u2014 Slack incoming webhook works)' at line 162 of this same file). Placeholder style and label conventions drift within one card.",
+   "evidence": "placeholder=\"threshold\"\naria-label=\"Threshold\"",
+   "fix": "Give the three fields visible Labels (Label component above each, matching the rest of settings) or at minimum sentence-case the placeholders to real hints ('Threshold, e.g. 0.5'); keep the aria-labels.",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 120,
+    "note": "Confirmed. AlertsCard.tsx rule-builder inputs (lines 117-128, 144-150) have no visible Label; placeholders are lowercase fragments ('threshold' L120, 'window (min)' L126, 'baseline window (min)' L148). Worse, threshold/window are pre-filled from state ('0.5', '60'), so those placeholders never render \u2014 first paint shows bare numbers with no field names, only aria-labels. Same page uses visible Label components everywhere else (EvalRubricCard L210-245; settings/page.tsx L312/404/413) and sentence-case example placeholders, including 'Webhook URL (\u2026)' at L162 of this same file. Genuine label/placeholder convention drift, not mitigated. Not P1: aria-labels exist so it's not an a11y failure and no token violation \u2014 P2 polish is correct."
+   }
+  },
+  {
+   "title": "Capitalization drift: lowercase 'cancel edit' action and Title-Case 'Eval & Safety' category vs sentence-case chrome",
+   "file": "frontend/src/components/settings/EvalRubricCard.tsx",
+   "line": 204,
+   "severity": "P2",
+   "description": "Button/label casing is sentence case throughout the app ('New workflow', 'Add rule', 'Save current config', 'Cost & usage'), but two sites drift: the rubric editor's cancel action renders lowercase ('cancel edit', EvalRubricCard.tsx:204), and the canvas palette category is Title Case ('Eval & Safety', node-registry.ts:88) while the observability chip on the same product says 'Cost & usage' (observability/page.tsx:473).",
+   "evidence": "<X className=\"h-3 w-3\" /> cancel edit",
+   "fix": "Change 'cancel edit' \u2192 'Cancel edit' and NODE_CATEGORIES quality label 'Eval & Safety' \u2192 'Eval & safety'.",
+   "dimension": "ia_copy",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 204,
+    "note": "Confirmed. EvalRubricCard.tsx:204 renders literal lowercase 'cancel edit' (no CSS text-transform involved), while the app's established button/label casing is sentence case ('New workflow' app/page.tsx:87, 'Add rule' AlertsCard.tsx:168, 'Save current config' SavedPolicies.tsx:136). node-registry.ts:88 has Title-Case category label 'Eval & Safety' vs sentence-case 'Cost & usage' at observability/page.tsx:473. Caveat: the 'Eval & Safety' half is weaker evidence since registry node labels (e.g. 'Input Schema') are Title Case throughout, so that may be a deliberate palette convention; the 'cancel edit' drift alone sustains the finding. P2 (wording/consistency polish) is the right severity."
+   }
+  },
+  {
+   "title": "RunDeck body is lg:overflow-hidden with no per-section scroll \u2014 trace rows and the 'Review approval' control can be clipped unreachable at short viewports",
+   "file": "frontend/src/components/canvas/run/RunDeck.tsx",
+   "line": 611,
+   "severity": "P2",
+   "description": "Expanded, the deck gets the caller's fixed height (`h-[42%] min-h-[320px] lg:min-h-[360px]`, WorkflowCanvas.tsx:2597) and switches to `lg:overflow-hidden`. The three body sections (`min-h-0 ... p-4 sm:p-5`) have no `overflow-y-auto` of their own at lg. At the 360px minimum (any viewport \u2272 920px tall), body space is ~234px while the trace section's content (heading + 5 rows + `approvalSlot` block at line 785) needs ~250px+ \u2014 the bottom of the trace list and the awaiting-approval 'Review approval' button get clipped with no way to scroll to them. Below lg the outer `overflow-y-auto` saves it; only lg+ is affected.",
+   "evidence": "collapsed\n          ? \"min-h-0\"\n          : cn(\"min-h-[320px] overflow-y-auto lg:overflow-hidden\", className)",
+   "fix": "Add `lg:overflow-y-auto` to each of the three body <section>s (they already have min-h-0), or keep the outer overflow-y-auto at lg instead of overflow-hidden.",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 611,
+    "note": "Verified. RunDeck.tsx:611 applies `overflow-y-auto lg:overflow-hidden` when expanded, and the three body sections (lines 680, 708, 749) have `min-h-0` but no per-section overflow at lg. Caller (WorkflowCanvas.tsx:2597) pins the deck to `h-[42%] min-h-[320px] lg:min-h-[360px]`, and the approvalSlot (\"Review approval\" button, WorkflowCanvas.tsx:2599-2608) renders at the bottom of the trace section (RunDeck.tsx:785). At the 360px lg floor, body space is ~232px (360 \u2212 82px header \u2212 44px footer) while the trace section needs ~250-265px (padding 40 + heading ~32 + 5 rows ~124 + approval slot ~53) and the output section ~256px \u2014 the bottom content clips with no scroll path at lg. Realistic on common ~900px-tall laptop displays. Severity P2 (not P1) is correct: when a run is awaiting_approval, isRunning is set false (WorkflowCanvas.tsx:1134-1140), so the \"Inspect trace\" button at the TOP of the same trace section (RunDeck.tsx:757-766) is visible and calls the same openFullRunResults handler \u2014 the approval flow remains reachable, so this is clipping polish, not a blocked control. Proposed fix (lg:overflow-y-auto on the sections, which already have min-h-0) is sound."
+   }
+  },
+  {
+   "title": "Five StatCard tiles in grid-cols-2/sm:grid-cols-3 leave an orphan tile and empty cells at every width below lg",
+   "file": "frontend/src/components/observability/TrustDashboard.tsx",
+   "line": 76,
+   "severity": "P2",
+   "description": "Three stat rows use `grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5` with exactly five StatCards: TrustDashboard.tsx:76, OpsStatRow.tsx:103, and CostDashboard.tsx:183. Below sm that yields rows of 2+2+1 (the fifth tile dangles beside an empty cell); from sm to lg it is 3+2 with a hole in the last row. Everything between 0 and 1024px \u2014 i.e. every split-screen/laptop-half layout \u2014 shows the ragged orphan on the observability dashboard's headline row.",
+   "evidence": "<div className=\"grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5\">",
+   "fix": "Give the fifth card `className=\"col-span-2 sm:col-span-1\"` (StatCard already forwards className) so it fills the base 2-col row, and reorder/span so the sm row is 3+2 with the wide tile last \u2014 or use `grid-cols-2 lg:grid-cols-5` only.",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 76,
+    "note": "Verified in all three cited locations: TrustDashboard.tsx:76, OpsStatRow.tsx:103, and CostDashboard.tsx:183 each render exactly 5 StatCard children (confirmed via grep count) inside `grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5`. The arithmetic holds: below 640px the 5 tiles wrap 2+2+1 (fifth tile beside an empty cell), and from 640-1024px they wrap 3+2 with a hole \u2014 so every viewport under lg shows a ragged last row on the observability headline stats. No mitigation exists (no col-span on any card, no auto-fit). The proposed fix is viable: StatCard (src/components/ui/stat-card.tsx) accepts and forwards `className` via cn(), so `col-span-2 sm:col-span-1`-style spans would work. This is purely a spacing/layout raggedness issue with no broken functionality or misleading data, which fits the P2 \"polish (minor inconsistency, spacing)\" rubric exactly \u2014 severity is correct. (Unrelated aside noticed while verifying: stat-card.tsx uses a bg-gradient-to-b, but it is token-based and out of scope for this finding.)"
+   }
+  },
+  {
+   "title": "divide-x on the wrapping run-stat grid paints stray left borders on wrapped rows below lg",
+   "file": "frontend/src/components/runs/RunDetailView.tsx",
+   "line": 392,
+   "severity": "P2",
+   "description": "The six-tile stat strip uses `grid grid-cols-2 divide-x ... sm:grid-cols-3 lg:grid-cols-6`. Tailwind's divide-x puts border-left on every child except the first, which is only correct in the single-row lg layout. In the 2-col (mobile) and 3-col (sm) layouts, the first cell of rows 2 and 3 gets a border-left that doubles up against the panel's own left border, while there is no horizontal divider between the wrapped rows at all. The RunDetailSkeleton duplicates the same classes at line 604, so the loading state has the same artifact.",
+   "evidence": "<div className=\"grid grid-cols-2 divide-x divide-border border-b border-border sm:grid-cols-3 lg:grid-cols-6\">",
+   "fix": "Replace divide-x with the gap-hairline technique: `grid grid-cols-2 gap-px bg-border sm:grid-cols-3 lg:grid-cols-6` with `bg-surface` on each cell \u2014 correct 1px rules in both axes at every breakpoint (apply to the skeleton too).",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 392,
+    "note": "Confirmed. RunDetailView.tsx line 392 (and skeleton at line 604) use `grid grid-cols-2 divide-x divide-border ... sm:grid-cols-3 lg:grid-cols-6`. divide-x is DOM-order based and breakpoint-unaware: below lg, the first cell of each wrapped row (children 3/5 at 2-col, child 4 at 3-col) gets a border-left that sits flush against the panel's own `border border-border` (from .dashboard-panel in globals.css), producing a doubled hairline at the panel edge, while wrapped rows have no horizontal divider between them. No responsive divide overrides or other mitigation exist. Cosmetic hairline artifact only \u2014 P2 (polish) is the right severity. Proposed gap-px/bg-border fix is sound; apply to both line 392 and the skeleton at 604."
+   }
+  },
+  {
+   "title": "CostBreakdownTable name-cell truncate is inert in an auto-layout table \u2014 long names force whole-table horizontal scroll instead",
+   "file": "frontend/src/components/observability/CostBreakdownTable.tsx",
+   "line": 132,
+   "severity": "P2",
+   "description": "The name cell renders `<span className=\"block truncate\">`, but the table is `w-full border-collapse` with default `table-layout: auto`, so the column is sized to the span's nowrap content width \u2014 the ellipsis can never trigger. A long workflow or model name instead widens the table past its `overflow-x-auto` wrapper (line 80), horizontally scrolling the numeric columns out of view on the Cost & usage dashboard.",
+   "evidence": "<span className=\"block truncate font-medium\">{text}</span>",
+   "fix": "Make the name column absorb slack so truncate works: add `w-full max-w-0` to the name <td>/<th> (or set `table-fixed` on the table with explicit widths for the numeric columns).",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 132,
+    "note": "Confirmed. Line 132 renders `<span className=\"block truncate\">` inside a td of a `w-full border-collapse` auto-layout table (line 83) with no table-fixed or max-w-0 anywhere; wrapper at line 80 is overflow-x-auto. With table-layout:auto, the nowrap from `truncate` makes the cell's min content width the full text width, so ellipsis can never trigger \u2014 long names widen the table and horizontally scroll the numeric columns out of view. Reachable in practice: CostDashboard.tsx feeds this column user-defined workflow names (falling back to UUID workflow_id) and model IDs, all unbounded, with no parent truncation. The presence of `truncate` shows ellipsis was intended, so this is a defect, not a choice. P2 is correct: data stays reachable via scroll and it only manifests with long names \u2014 layout polish, not a P1 design-system violation. Proposed fix (w-full max-w-0 on name cell, or table-fixed with column widths) is the standard remedy."
+   }
+  },
+  {
+   "title": "AlertsCard comparison-row hint is squeezed into one column of a 5-col grid while 2 columns sit empty",
+   "file": "frontend/src/components/settings/AlertsCard.tsx",
+   "line": 152,
+   "severity": "P2",
+   "description": "In the second `grid gap-2 sm:grid-cols-5` row, the explanatory hint gets `sm:col-span-1` (~110px at 640px). In absolute mode the row is Select(span 2) + hint(1), leaving columns 4\u20135 empty while 'threshold = raw value' wraps into a tall sliver; in baseline mode the longer string 'threshold = ratio (e.g. 2 = 2\u00d7 baseline)' wraps to ~5 lines beside 36px-tall inputs. The hint never uses the free space that exists in at least one of the two modes.",
+   "evidence": "<p className=\"self-center text-2xs text-subtle sm:col-span-1\">",
+   "fix": "Span the remaining columns: `cn(\"self-center text-2xs text-subtle\", comparison === \"baseline\" ? \"sm:col-span-1\" : \"sm:col-span-3\")` \u2014 or move the hint out of the grid onto its own full-width form-hint line.",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 152,
+    "note": "Verified in frontend/src/components/settings/AlertsCard.tsx. The second row grid (line 130, `grid gap-2 sm:grid-cols-5`) contains Select sm:col-span-2 (line 135), a baseline-only Input sm:col-span-2 (lines 143-150), and the hint <p> hardcoded to sm:col-span-1 (line 152) in both modes. In absolute mode columns 4-5 sit empty while the hint wraps in a ~1/5-width column; in baseline mode the longer \"threshold = ratio (e.g. 2 = 2x baseline)\" string is squeezed into the same single column. No parent (SettingsSection/SectionCard) mitigates it. Layout polish only, so P2 is correct; the proposed conditional col-span (3 in absolute mode) or a full-width hint line fixes it."
+   }
+  },
+  {
+   "title": "TraceTimeline axis tick labels are distributed with justify-between and drift off the percent-positioned gridlines",
+   "file": "frontend/src/components/runs/TraceTimeline.tsx",
+   "line": 122,
+   "severity": "P2",
+   "description": "Tick labels are laid out with `flex justify-between` (equal gaps between label boxes), while the gridlines they annotate are absolutely positioned at exact `left: (i/4)*100%` (lines 147\u2013153). Even with equal-width labels, the centers of ticks 1 and 3 sit \u00b1(labelWidth/4) (~6\u201310px) away from their gridlines, and unequal widths ('0ms' vs '1.2s' vs '5s') drift further \u2014 on a component whose whole purpose is positional accuracy of spans on a shared axis.",
+   "evidence": "<div className=\"flex justify-between font-mono text-2xs tabular-nums text-subtle\">",
+   "fix": "Position each tick absolutely on the same axis geometry: wrap in a `relative h-4` div and give each label `absolute -translate-x-1/2` with `left: (i/GRID_STEPS)*100%` (first/last anchored with translate-x-0/-translate-x-full).",
+   "dimension": "layout",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 122,
+    "note": "Confirmed. Line 122 lays out the 5 tick labels with `flex justify-between` while the gridlines they annotate are absolutely positioned at left:(i/4)*100% (lines 147-153) inside a container with the identical horizontal extent (left-10 right-[4.5rem] vs ml-10 mr-[4.5rem]). Math checks: with justify-between, label i's center sits at i*(W-w)/4 + w/2 vs gridline at i*W/4, a drift of w(2-i)/4 = \u00b1labelWidth/4 (~5-8px for mono text-2xs) on ticks 1 and 3, worse with unequal label widths (0ms vs 250ms vs 1.2s). The text-left/center/right classes on the shrink-wrapped spans are no-ops for this and show the anchoring was intended but only achieved at the endpoints. No mitigation elsewhere. Bars themselves are correctly positioned, so nothing is misleading about the data \u2014 a few-px label/gridline misalignment is polish on a precision surface: P2 is correct. Proposed fix (absolute-position each label at the same i/GRID_STEPS geometry with -translate-x-1/2, endpoints anchored) is sound."
+   }
+  },
+  {
+   "severity": "P2",
+   "dimension": "live",
+   "title": "/workflows renders the identical page as / (duplicate route, two URLs for one surface)",
+   "file": "frontend/src/app/workflows/page.tsx",
+   "line": null,
+   "description": "Navigating to /workflows shows exactly the workflows home rendered at /. Two canonical URLs for the same page splits deep links and history.",
+   "fix": "Make /workflows a redirect to / (or vice versa) so one canonical URL exists.",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "severity": "P2",
+   "dimension": "live",
+   "title": "Trace rows print the node duration twice (header right + bar right)",
+   "file": "frontend/src/components/runs/TraceNodeRow.tsx",
+   "line": 116,
+   "description": "Each node row shows the same duration in the header meta cluster and again at the right end of the span bar ('0 ms \u2026 0 ms' visible live on a run with 3 nodes).",
+   "fix": "Drop the header duration (keep status badge there) and let the bar-right value be the single duration; or keep header-only and drop the bar label.",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "severity": "P2",
+   "dimension": "live",
+   "title": "Saved json_schema policy loads into the playground whose Type select has no such option",
+   "file": "frontend/src/components/guardrails/SavedPolicies.tsx",
+   "line": 31,
+   "description": "SavedPolicies' GUARDRAIL_TYPES includes 'json_schema', so loading such a policy sets the playground guardrailType to json_schema \u2014 but the playground's Type select deliberately has no 'Structured output' item, leaving the select displaying a value with no matching option and no way to test the schema (the playground has no schema field).",
+   "fix": "Either filter json_schema policies out of the playground's Load coercion (fall back to 'rules' with a toast explaining schema policies are tested on the canvas), or add the select item + a read-only notice.",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "severity": "P2",
+   "dimension": "live",
+   "title": "Node palette category chips clip at the panel edge with no scroll affordance",
+   "file": "frontend/src/components/canvas/NodePalette.tsx",
+   "line": null,
+   "description": "Observed live: the category chip row (All / Trigger 2 / Logic 4 / LLM 5 / \u2026) cuts a chip in half at the palette's right edge with no visible scroll indicator or fade, so remaining categories are undiscoverable.",
+   "fix": "Add a fade-out mask + horizontal scroll affordance (or wrap chips to two rows).",
+   "evidence": "",
+   "verdict": {
+    "note": "Observed in the live app during the interactive browser pass (dark + light themes); not independently re-verified by a code agent unless noted in the description."
+   }
+  },
+  {
+   "title": "Trust view has no zero-telemetry empty state \u2014 renders 'last 0 runs' and dash tiles",
+   "file": "frontend/src/components/observability/TrustDashboard.tsx",
+   "line": 71,
+   "severity": "P2",
+   "description": "When trust loads with runs_scanned === 0 (fresh install), the Trust tab renders five StatCards of '\u2014', section descriptions reading 'LLM-judge evaluation \u00b7 last 0 runs', and 'Cost & latency \u00b7 last 0 runs'. The sibling Cost view has a proper first-run EmptyState with a 'Build a workflow' CTA (CostDashboard.tsx:115-140) and the Triage view gets GettingStartedBanner; Trust is the only observability view without an empty state.",
+   "evidence": "const windowLabel = `last ${scanned.toLocaleString()} runs`;",
+   "fix": "After the load guard, early-return an `EmptyState` (icon ShieldCheck, 'Run a workflow to start building trust metrics', CTA to /workflows/new) when `trust.runs_scanned === 0 && trust.guardrail_events.total === 0`.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 71,
+    "note": "Verified. TrustDashboard.tsx has only a loading guard (line 63-65); there is no zero-telemetry branch, so with runs_scanned === 0 it renders five StatCards of dashes plus section descriptions interpolating windowLabel (line 71: `last ${scanned.toLocaleString()} runs` -> \"last 0 runs\") into Quality, Safety, and Cost & latency SectionCards. The sibling CostDashboard early-returns a proper EmptyState with a CTA when run_count === 0 (CostDashboard.tsx:113-139), and SessionsView also uses EmptyState, so the gap is a real consistency/state finding. Partial mitigation: observability/page.tsx:503-513 renders GettingStartedBanner above every view (including Trust) when hasCollectedTelemetry is false \u2014 but that banner is dismissible and persisted (GettingStartedBanner.tsx handleDismiss -> dismissOnboarding), after which Trust shows only the degenerate \"last 0 runs\" surface. Because the banner covers the common fresh-install path, P2 (polish) is the right severity rather than P1's fully missing empty state; the \"Trust is the only view without an empty state\" wording in the claim is slightly overstated but the substance holds. Proposed fix (EmptyState early return on runs_scanned === 0 && guardrail_events.total === 0) is reasonable."
+   }
+  },
+  {
+   "title": "RecentActivityRail asserts 'No runs yet' when the summary query fails",
+   "file": "frontend/src/components/home/RecentActivityRail.tsx",
+   "line": 29,
+   "severity": "P2",
+   "description": "The rail destructures only `data` \u2014 the comment even says 'degrades quietly on error' \u2014 but the degradation isn't quiet: on failure it renders the EmptyState 'No runs yet \u2014 Trigger a workflow to see run activity here.' (lines 41-49), a factual claim about the user's run history that the failed request cannot support. P2 rather than P1 only because it's a secondary home-page rail and the same data is reachable via /observability, which does handle errors.",
+   "evidence": "// Shares the summary query with the overview strip; degrades quietly on error.\n  const { data: summary } = useQuery({",
+   "fix": "Read `isError` and swap the EmptyState for a one-line muted 'Couldn't load recent activity' message (no CTA) when the query errored.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 29,
+    "note": "Confirmed. Line 29 destructures only `data` (no isError/isLoading), and lines 41-49 render the affirmative \"No runs yet\" EmptyState whenever runs is empty \u2014 including on query failure and during initial load (a brief false-empty flash). The sibling HomeOverviewStrip, which shares the same query, degrades to a neutral \"\u2014\" dash instead of making a factual claim, so this rail is a genuine deviation, not an intentional pattern; no parent error boundary mitigates it. P2 is right: secondary home rail, misleading state only on request failure, and /observability presents the same data with proper error handling. Proposed fix (read isError, show a muted \"Couldn't load recent activity\" line) is correct; ideally also gate on isLoading."
+   }
+  },
+  {
+   "title": "Canvas reference-data loads swallow errors with empty catch \u2014 pickers silently render empty",
+   "file": "frontend/src/components/canvas/NodeInspector.tsx",
+   "line": 1100,
+   "severity": "P2",
+   "description": "NodeInspector fetches its reference data with `.catch(() => {})` / no-op fallbacks: eval presets, credentials, and workflows (lines 1100-1102). On failure the eval-preset picker, credential picker, and sub-workflow picker just render empty with no signal \u2014 a user configuring an agent node concludes they have no credentials saved. Same pattern in WorkflowGuardrailField.tsx:34-37 (trigger section): the policies query error leaves only 'None' in the workflow-guardrail select, and if a policyId is already attached, the Radix Select has a value with no matching item and displays blank \u2014 an attached policy shown as nothing.",
+   "evidence": "api.listEvalPresets().then(setEvalPresets).catch(() => {});\n    api.listCredentials().then(setCredentials).catch(() => {});\n    api.listWorkflows().then((rows) => setWorkflows(rows.map((w) => ({ id: w.id, name: w.name })))).catch(() => {});",
+   "fix": "Track a `referenceLoadError` flag set in those catch handlers and render a small `form-hint text-destructive` line near the affected pickers ('Couldn't load credentials/presets \u2014 reopen the inspector to retry'); in WorkflowGuardrailField read `isError` from the query and show the same hint under the select.",
+   "dimension": "states",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 1100,
+    "note": "Verified. NodeInspector.tsx:1100-1102 swallow fetch errors with .catch(() => {}) for eval presets, credentials, and workflows; the dependent pickers (credential ~1685, sub-workflow ~1619, preset ~1908) render empty with no error signal, and the adjacent 'Create credentials in Settings' hint reinforces the wrong conclusion. WorkflowGuardrailField.tsx:34 ignores isError (data defaults to []), and with a policyId attached but no matching SelectItem the Radix Select trigger renders blank \u2014 an attached policy shown as nothing. No mitigation elsewhere. P2 is appropriate: only manifests on rare reference-fetch failure in secondary pickers, though the rubric could support P1 under 'missing error state'."
+   }
+  },
+  {
+   "title": "Destructive Button uses raw `text-white` instead of a foreground token",
+   "file": "frontend/src/components/ui/button.tsx",
+   "line": 21,
+   "severity": "P2",
+   "description": "The destructive variant hardcodes `text-white` \u2014 the only raw palette color class in the component layer. The token system deliberately uses warm whites (`--primary-foreground` is #181813/#f6f1e9, never pure #fff) and has no `--destructive-foreground`, so this cold pure-white label sits outside the warm palette in both themes and bypasses token discipline (a future light-theme destructive tint change could silently break contrast).",
+   "evidence": "\"bg-destructive text-white hover:bg-destructive/90 shadow-elev-1 ...\"",
+   "fix": "Add `--destructive-foreground` (e.g. #fbf8f3 warm white) to both theme blocks in globals.css, expose it as `destructive.foreground` in tailwind.config.ts, and use `text-destructive-foreground`.",
+   "dimension": "tokens",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 21,
+    "note": "Verified. frontend/src/components/ui/button.tsx line 21 destructive variant is exactly \"bg-destructive text-white hover:bg-destructive/90 ...\". Grep confirms this is the only text-white in the component layer, globals.css has no --destructive-foreground token in either theme (only --destructive #c46a6b/#aa595a and --destructive-glow), and tailwind.config.ts exposes destructive only as DEFAULT/glow. --primary-foreground is warm (#181813 dark / #f6f1e9 light), so pure #fff is genuinely outside the warm palette and violates the stated token rule (default Tailwind palette classes in components are violations). Not mitigated elsewhere and no evidence it is intentional. Contrast is currently fine on both destructive tints, so this is token-discipline polish, not breakage \u2014 P2 is correct."
+   }
+  },
+  {
+   "title": "Category hue used as fills, colored text, and >2px bars \u2014 beyond the '<=2px rule, never fills' contract",
+   "file": "frontend/src/components/canvas/NodeInspector.tsx",
+   "line": 1195,
+   "severity": "P2",
+   "description": "The system (globals.css invariant #1 and the audit bar) restricts node-category chroma outside node cards to a <=2px rule/swatch, never fills. Violations: NodeInspector.tsx:1192-1197 fills an 32px icon chip with `color-mix(in srgb, ${catColor} 14%, transparent)` plus a category-colored icon, :1203 colors the category label text (`style={{ color: catColor }}`), and :1188 uses a 3px rule (`w-[3px]`); NodePalette.tsx:168-172 repeats the same 14% chip-fill recipe; app/workflows/new/page.tsx:265 draws a 4px category bar (`w-1`); TraceNodeRow.tsx:160-164 renders a solid 8px category dot. Contrast with the compliant sites the codebase itself annotates: TraceNodeRow.tsx:246 ('Category hue as a <=2px left rule on the bar', `w-0.5`) and CostBreakdownTable.tsx:109 (`w-0.5` accent rule). All use theme-flipped `--cat-*` vars so nothing breaks per-theme; this is form-factor drift, concentrated in the recently added inspector header.",
+   "evidence": "background: `color-mix(in srgb, ${catColor} 14%, transparent)`,\n              color: catColor,",
+   "fix": "Normalize category rules to `w-0.5` (2px) in NodeInspector:1188 and workflows/new:265; make the inspector/palette icon chips monochrome (`bg-surface-input text-muted`) keeping hue only on the 2px left rule; set the category label text at NodeInspector:1203 to `text-muted`; shrink or de-saturate the TraceNodeRow dot (e.g. 2px ring in catColor instead of solid fill).",
+   "dimension": "tokens",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 1195,
+    "note": "Verified. globals.css invariant #1 explicitly states chroma (--cat-*) lives inside nodes only, with category hue elsewhere allowed \"only as a <=2px rule/swatch\". All cited violations confirmed: NodeInspector.tsx:1188 has a 3px rule (w-[3px]), :1192-1197 fills a 32px icon chip with color-mix(catColor 14%) plus catColor icon, :1203 sets category label text to catColor; NodePalette.tsx:131 and :171 repeat the 14% chip fill; workflows/new/page.tsx:265 uses a 4px bar (w-1); runs/TraceNodeRow.tsx:160-164 renders a solid 8px category dot (colorVar = CATEGORY_COLOR_VAR). The compliant contrast sites also check out (TraceNodeRow.tsx:246-249 uses w-0.5 with an explicit \"<=2px left rule\" comment). The sanctioned fill location is inside node cards (BaseNode.tsx:261-271 uses cat tints there by design). Not mitigated elsewhere: all uses employ theme-flipped --cat-* vars so both themes render, which is why this is form drift, not breakage \u2014 P2 (minor inconsistency/polish) is the right severity, not P1, since it is intensity/form-factor drift within the token system rather than raw-color or theme-breaking usage."
+   }
+  },
+  {
+   "title": "Token counts formatted four different ways; trace drill-down counts lack thousands grouping",
+   "file": "frontend/src/components/runs/TraceNodeRow.tsx",
+   "line": 316,
+   "severity": "P2",
+   "description": "On the run-detail page the header tile groups tokens (RunDetailView.tsx:401 metrics.total_tokens.toLocaleString()), but the per-span rows in the same timeline render raw numbers: TraceNodeRow.tsx:316 `` ` \u00b7 ${tokens} tok` `` and :390 `{call.total_tokens ?? \"\u2014\"} tok` \u2014 a 12,480-token call shows as \"12480 tok\". Elsewhere the same quantity is abbreviated inconsistently: CostDashboard.tsx:56-57 uses uppercase \"1.2M\"/\"3.4K\" while BaseNode.tsx:445-448 uses lowercase \"1.2k\", and TrustDashboard.tsx:237 / RunDeck.tsx:793 use full grouped numbers. Four formats for one metric across adjacent surfaces.",
+   "evidence": "{tokens != null ? ` \u00b7 ${tokens} tok` : \"\"}",
+   "fix": "At minimum apply .toLocaleString() at TraceNodeRow.tsx:316 and :390. Preferably move a single formatTokens() into src/lib/format.ts (pick one abbreviation casing) and reuse it in CostDashboard, BaseNode, TrustDashboard, and RunDeck.",
+   "dimension": "typography",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 316,
+    "note": "Verified. TraceNodeRow.tsx:316 (`\u00b7 ${tokens} tok`) and :390 (`{call.total_tokens ?? \"\u2014\"} tok`) render ungrouped raw integers while the header tile in the same run-detail view uses toLocaleString (RunDetailView.tsx:401). Cross-surface drift confirmed: two divergent local formatTokens helpers exist (CostDashboard.tsx:54 uppercase 1.2K/1.2M vs BaseNode.tsx:445 lowercase 1.2k with different thresholds), while TrustDashboard.tsx:237 and RunDeck.tsx:793 use grouped full numbers \u2014 four formats for one metric. src/lib/format.ts exists and lacks a shared token formatter, so the proposed consolidation is apt. All values are font-mono tabular-nums, so no design-token violation; correctly P2 polish."
+   }
+  },
+  {
+   "title": "Micro-eyebrow label role exists at three competing sizes (.text-micro 11px vs ad-hoc 10px vs 12px), diverging even within one component",
+   "file": "frontend/src/components/canvas/NodeInspector.tsx",
+   "line": 104,
+   "severity": "P2",
+   "description": "globals.css defines .text-micro (11px, font-medium, uppercase, tracking-[0.06em], text-muted) as the canonical eyebrow/label style, used by StatCard.tsx:22, RunDetailView.tsx:418, TraceNodeRow.tsx:400/408. But ~20 sites hand-roll a 10px variant `text-2xs font-medium uppercase tracking-wider` (EvalRubricCard.tsx:195/276/334, ViolationBreakdown.tsx:107, VerdictPanel.tsx:53, GuardrailPlayground.tsx:178/270/316, HighlightedSample.tsx:153, settings/page.tsx:345/401, CommandPalette.tsx:470, AssistRail.tsx:54/160/223/268, PanelSection.tsx:22), and a third 12px variant appears in NodeInspector.tsx:104 (`text-xs font-medium uppercase tracking-wider`), EvalScoresChart.tsx:64, and DeploySheet.tsx:73. NodeInspector itself uses text-xs at line 104 and text-2xs at line 126 for the same collapsible-section-header role, so sibling panels in one inspector render eyebrows at different sizes.",
+   "evidence": "text-xs font-medium uppercase tracking-wider text-muted transition-colors",
+   "fix": "Standardize the role on the existing .text-micro utility (add a text-subtle color override where needed): replace the ad-hoc `text-2xs/text-xs font-medium uppercase tracking-wider` stacks with `text-micro`, starting with the intra-file conflict at NodeInspector.tsx:104 vs :126 and the recently added guardrail/settings components.",
+   "dimension": "typography",
+   "verdict": {
+    "is_real": true,
+    "severity": "P2",
+    "corrected_line": 104,
+    "note": "Verified. globals.css:423 defines .text-micro as the canonical eyebrow (11px, font-medium, uppercase, tracking-[0.06em], text-muted) and it is used widely (stat-card.tsx:22, page-header.tsx:33, RunDetailView.tsx:418, TraceNodeRow.tsx:400/408, etc.). Meanwhile 24 sites hand-roll a 10px variant `text-2xs font-medium uppercase tracking-wider` (text-2xs = 10px per tailwind.config.ts:121), and a 12px variant `text-xs font-medium uppercase tracking-wider` exists at NodeInspector.tsx:104 and EvalScoresChart.tsx:64 (DeploySheet.tsx:72 is a further 12px font-semibold tracking-wide variant). The intra-file conflict is real: NodeInspector.tsx:104 (InspectorDetails summary, text-xs/12px) vs :126 (InspectorSection heading, text-2xs/10px) render sibling section-header eyebrows at different sizes and tracking within the same inspector panel; NodeInspector even uses text-micro elsewhere (line 1203). No mitigating factor (tracking-wider=0.05em vs 0.06em, so these are genuinely divergent styles, not aliases). This is a minor typography/consistency drift with no functional or a11y impact, so P2 (polish) per the rubric is correct \u2014 it does not rise to P1 since the drift is size/tracking nuance rather than duplicated component logic or theme breakage. Proposed fix (standardize on .text-micro) is reasonable."
+   }
+  }
+ ],
+ "rejected": []
+}

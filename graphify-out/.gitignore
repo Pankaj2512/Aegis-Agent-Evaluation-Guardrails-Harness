@@ -1,0 +1,7 @@
+# graphify machine state + regenerable raw data — commit only the shareable
+# outputs (the audit report + the self-contained interactive graph). Everything
+# else here is rebuildable via `/graphify --update`.
+*
+!.gitignore
+!GRAPH_REPORT.md
+!graph.html
