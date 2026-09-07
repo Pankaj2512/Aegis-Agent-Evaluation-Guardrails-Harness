@@ -1,0 +1,636 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =====================================================================
+   Aegis "instrument" design system — craft invariants (do not drift):
+   1. Color = data semantics ONLY. Chroma (--cat-*, success/warning/
+      destructive) lives inside nodes or on run/eval status. Chrome,
+      buttons, tabs, dividers, guide lines, table cells, waterfall bars
+      stay monochrome (category hue allowed only as a <=2px rule/swatch).
+   2. Flat elevation, deepened: prefer surface-lift (--surface-overlay)
+      + hairline over drop shadows; shadows only for truly floating layers.
+   3. Motion clarifies, never performs: chrome transitions <= --dur-2
+      ease-out; the only looping animations are edge-flow/glow-pulse and
+      only during a live run; no spring/overshoot; all gated on
+      prefers-reduced-motion.
+   4. Mono + tabular-nums for all data (durations, tokens, cost, IDs,
+      timestamps, scores).
+   5. Three hairline weights: --border / --border-mid / --border-strong.
+   6. Both themes always — verify every change in dark AND warm-light.
+   ===================================================================== */
+
+:root,
+html.dark {
+  /* Obsidian + oxide copper. Chrome remains monochrome; the copper signal is
+     reserved for active execution, while sage and muted rose retain their
+     completed and failed meanings. */
+  color-scheme: dark;
+  --bg: #10110f;
+
+  --surface: #171814;
+  --surface-elevated: #1c1d19;
+  /* One rung above elevated for floating chrome (menus, peeks, dragged
+     nodes): depth via surface-lift + hairline, not drop shadow. */
+  --surface-overlay: #23231f;
+  --surface-overlay-highlight: rgba(246, 239, 229, 0.045);
+  --surface-glass: rgba(246, 239, 229, 0.035);
+  --surface-hover: rgba(246, 239, 229, 0.055);
+  --surface-input: #12130f;
+
+  --border: rgba(232, 222, 210, 0.13);
+  /* Mid weight for nested dividers / dense table rows (3-hairline system). */
+  --border-mid: rgba(232, 222, 210, 0.19);
+  --border-strong: rgba(232, 222, 210, 0.27);
+
+  --fg: #f0ece4;
+  --fg-muted: #aaa39a;
+  --fg-subtle: #827d74;
+
+  /* Primary is bone-white: buttons and emphasis read as print, not neon. */
+  --primary: #ece6dc;
+  --primary-50: #fbf8f3;
+  --primary-100: #f4eee5;
+  --primary-200: #ece6dc;
+  --primary-300: #d8d0c5;
+  --primary-400: #bdb4a8;
+  --primary-500: #9a9185;
+  --primary-600: #777067;
+  --primary-700: #5d5750;
+  --primary-800: #44403b;
+  --primary-900: #2f2c28;
+  --primary-foreground: #181813;
+  --primary-muted: rgba(236, 230, 220, 0.08);
+  --primary-glow: rgba(236, 230, 220, 0.15);
+
+  /* Accent collapses into the neutral ramp — no second hue in the chrome. */
+  --accent: #d0c7bb;
+  --accent-50: #fbf8f3;
+  --accent-300: #ded6cb;
+  --accent-400: #d0c7bb;
+  --accent-500: #b6ada1;
+  --accent-600: #948d83;
+  --accent-foreground: #181813;
+  --accent-muted: rgba(208, 199, 187, 0.085);
+  --accent-glow: rgba(208, 199, 187, 0.15);
+
+  --active: #d78f6a;
+  --active-glow: rgba(215, 143, 106, 0.24);
+  --destructive: #c46a6b;
+  /* Warm white — the only foreground that clears contrast on the rose fill in
+     both themes; never pure #fff (the system has no pure white). */
+  --destructive-foreground: #fbf8f3;
+  --destructive-glow: rgba(196, 106, 107, 0.22);
+  --success: #73927c;
+  --success-glow: rgba(115, 146, 124, 0.2);
+  --warning: #c9a05d;
+  --warning-glow: rgba(201, 160, 93, 0.22);
+
+  --ring: #c8bfb2;
+
+  /* Matched-lightness, low-chroma categories. Copper stays reserved for live work. */
+  --cat-trigger: #aaa18f;
+  --cat-logic: #78978f;
+  --cat-llm: #a18f77;
+  --cat-data: #71957c;
+  --cat-integration: #b67459;
+  --cat-quality: #ad7475;
+  --cat-flow: #938f86;
+
+  --canvas-grid: #363730;
+  --canvas-edge: #69675f;
+  --canvas-edge-active: var(--active);
+  --canvas-edge-failed: var(--destructive);
+  --canvas-connection: #aaa398;
+
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
+  --radius: var(--radius-lg);
+
+  /* Flat elevation: borders do the work, shadows stay short and neutral. */
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --elev-2: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --elev-3: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --elev-glow-primary: 0 0 0 1px var(--border-strong), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --elev-glow-accent: 0 0 0 1px var(--border-strong), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --elev-glow-active: 0 0 0 1px rgba(215, 143, 106, 0.54);
+  --elev-glow-success: 0 0 0 1px rgba(115, 146, 124, 0.45);
+  --elev-glow-destructive: 0 0 0 1px rgba(196, 106, 107, 0.5);
+  --elev-glow-warning: 0 0 0 1px rgba(201, 160, 93, 0.5);
+
+  /* Node card top-edge sheen — a 1px inner highlight that gives the flat
+     instrument cards a hint of dimensional light without any drop shadow. */
+  --node-highlight: rgba(246, 239, 229, 0.045);
+  /* The canvas stays matte; no decorative gradient lighting. */
+  --canvas-aura: transparent;
+  /* Subtler sibling of --node-highlight for the larger content surfaces. */
+  --surface-highlight: rgba(246, 239, 229, 0.035);
+  --app-glow: transparent;
+
+  /* Motion contract — chrome uses these durations; keep chrome <= --dur-2. */
+  --dur-1: 140ms; /* micro: hovers, buttons, chips, handles */
+  --dur-2: 220ms; /* surfaces: panels, cards, inspector, menus */
+  --dur-3: 300ms; /* modal / viewport / command palette */
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* shadcn aliases */
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface-elevated);
+  --popover-foreground: var(--fg);
+  --input: var(--surface-input);
+  --secondary: var(--surface-hover);
+  --secondary-foreground: var(--fg);
+  --muted: var(--fg-muted);
+  --muted-foreground: var(--fg-muted);
+}
+
+/* Quiet oxidized-paper counterpart — deliberately dim, never pure white. */
+html.light {
+  color-scheme: light;
+  --bg: #e9e5de;
+  --surface: #f1ede6;
+  --surface-elevated: #f6f2ec;
+  /* Lifted paper for floating chrome — a touch brighter than elevated. */
+  --surface-overlay: #faf6ef;
+  --surface-overlay-highlight: rgba(255, 253, 248, 0.6);
+  --surface-glass: rgba(48, 43, 36, 0.035);
+  --surface-hover: rgba(48, 43, 36, 0.06);
+  --surface-input: #e5dfd6;
+
+  --border: rgba(61, 56, 49, 0.16);
+  --border-mid: rgba(61, 56, 49, 0.22);
+  --border-strong: rgba(61, 56, 49, 0.28);
+
+  --fg: #28251f;
+  --fg-muted: #6e685e;
+  --fg-subtle: #867f74;
+
+  /* Quiet ink for chrome; copper stays an execution signal. */
+  --primary: #312d27;
+  --primary-50: #4d4840;
+  --primary-100: #625c53;
+  --primary-200: #777067;
+  --primary-300: #8d857b;
+  --primary-400: #a29a90;
+  --primary-500: #312d27;
+  --primary-600: #403a32;
+  --primary-700: #28241f;
+  --primary-800: #1e1b17;
+  --primary-900: #15130f;
+  --primary-foreground: #f6f1e9;
+  --primary-muted: rgba(49, 45, 39, 0.09);
+  --primary-glow: rgba(49, 45, 39, 0.14);
+
+  --accent: #6c655b;
+  --accent-50: #f1ede6;
+  --accent-300: #968e83;
+  --accent-400: #7f776d;
+  --accent-500: #6c655b;
+  --accent-600: #514b43;
+  --accent-foreground: #f6f1e9;
+  --accent-muted: rgba(108, 101, 91, 0.1);
+  --accent-glow: rgba(108, 101, 91, 0.14);
+
+  --active: #a96448;
+  --active-glow: rgba(169, 100, 72, 0.18);
+  --destructive: #aa595a;
+  --destructive-foreground: #fbf8f3;
+  --destructive-glow: rgba(170, 89, 90, 0.16);
+  --success: #526f5d;
+  --success-glow: rgba(82, 111, 93, 0.14);
+  --warning: #9b7a3e;
+  --warning-glow: rgba(155, 122, 62, 0.16);
+
+  --ring: #756d62;
+
+  /* Darkened for readable labels on paper; no purple or bright yellow. */
+  --cat-trigger: #726c61;
+  --cat-logic: #456b65;
+  --cat-llm: #74624b;
+  --cat-data: #4d765e;
+  --cat-integration: #94543f;
+  --cat-quality: #925b5e;
+  --cat-flow: #69645c;
+
+  --canvas-grid: #c6c0b5;
+  --canvas-edge: #7f796f;
+  --canvas-edge-active: var(--active);
+  --canvas-edge-failed: var(--destructive);
+  --canvas-connection: #706a60;
+
+  --elev-1: 0 1px 2px rgba(46, 42, 36, 0.06);
+  --elev-2: 0 2px 8px rgba(46, 42, 36, 0.08);
+  --elev-3: 0 8px 20px rgba(46, 42, 36, 0.1);
+  --elev-glow-primary: 0 0 0 1px var(--border-strong), 0 1px 2px rgba(46, 42, 36, 0.06);
+  --elev-glow-accent: 0 0 0 1px var(--border-strong), 0 1px 2px rgba(46, 42, 36, 0.06);
+  --elev-glow-active: 0 0 0 1px rgba(169, 100, 72, 0.45);
+  --elev-glow-success: 0 0 0 1px rgba(82, 111, 93, 0.35);
+  --elev-glow-destructive: 0 0 0 1px rgba(170, 89, 90, 0.4);
+  --elev-glow-warning: 0 0 0 1px rgba(155, 122, 62, 0.4);
+
+  /* On paper, restrained edge light keeps surfaces tangible without gradients. */
+  --node-highlight: rgba(255, 253, 248, 0.56);
+  --canvas-aura: transparent;
+  --surface-highlight: rgba(255, 253, 248, 0.5);
+  --app-glow: transparent;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-bg text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    background-color: var(--bg);
+    background-image: none;
+  }
+
+  :focus-visible {
+    outline: none;
+    transition: box-shadow 160ms var(--ease-out);
+  }
+}
+
+@layer components {
+  .app-shell {
+    @apply min-h-screen;
+  }
+
+  .panel {
+    @apply rounded-lg border border-border bg-surface-elevated;
+    box-shadow: var(--elev-1);
+  }
+
+  /* Content-surface sheen: a 1px inner top-edge highlight rendered on a
+     pseudo-element so it composes with the card's own box-shadow instead of
+     overwriting it. The house recipe for lifting flat bordered cards. */
+  .surface-card {
+    position: relative;
+  }
+  .surface-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 1px 0 0 var(--surface-highlight);
+    pointer-events: none;
+  }
+
+  /* Frosted floating surface (menus, peeks, strips). Uses the glass token
+     over a mostly-opaque elevated base so text stays readable on any grid. */
+  .glass-panel {
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface-overlay) 92%, var(--surface));
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  @supports not (backdrop-filter: blur(1px)) {
+    .glass-panel {
+      background: var(--surface-overlay);
+    }
+  }
+
+  .page-container {
+    @apply mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8;
+  }
+
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:border focus:border-border focus:bg-surface-elevated focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-lg;
+  }
+
+  .sr-only {
+    @apply absolute h-px w-px overflow-hidden whitespace-nowrap border-0 p-0;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+  }
+
+  .not-sr-only {
+    @apply static h-auto w-auto overflow-visible whitespace-normal p-0;
+    clip: auto;
+    clip-path: none;
+  }
+
+  .section-heading {
+    @apply text-base font-semibold tracking-tight text-foreground;
+  }
+
+  .text-muted {
+    color: var(--fg-muted);
+  }
+
+  .text-subtle {
+    color: var(--fg-subtle);
+  }
+
+
+
+  .skeleton {
+    @apply animate-pulse rounded-md bg-surface-hover;
+  }
+
+  .nav-link {
+    @apply inline-flex items-center rounded-md border border-transparent px-3 py-2 text-sm font-medium text-muted transition-colors;
+  }
+
+  .nav-link:hover {
+    @apply text-foreground;
+  }
+
+  .nav-link-active {
+    @apply border-border-strong bg-surface-hover text-foreground;
+    box-shadow: inset 0 1px 0 var(--surface-highlight);
+  }
+
+  .nav-link:focus-visible,
+  .sidebar-tab:focus-visible,
+  .tab-trigger:focus-visible,
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
+  }
+
+  .section-block {
+    animation: fade-in 0.35s ease-out forwards;
+    opacity: 0;
+  }
+
+  .tab-trigger {
+    @apply flex flex-1 items-center justify-center gap-2 border-b-2 border-transparent px-3 py-3 text-xs font-medium text-muted transition sm:px-4 sm:text-sm;
+  }
+
+  .tab-trigger:hover {
+    @apply text-foreground;
+  }
+
+  .tab-trigger-active {
+    @apply border-primary text-foreground;
+  }
+
+  .sidebar-tab {
+    /* Natural width + nowrap so the 5 labels never compress into each other;
+       the tab row scrolls (overflow-x-auto) when the panel is narrow. */
+    @apply relative flex shrink-0 flex-col items-center gap-1 whitespace-nowrap px-2 py-3 text-2xs font-semibold uppercase tracking-normal transition;
+  }
+
+  .sidebar-tab-active {
+    @apply text-foreground;
+  }
+
+  .sidebar-tab-active::after {
+    content: "";
+    @apply absolute inset-x-2 bottom-0 h-px bg-foreground;
+  }
+
+  .eyebrow {
+    @apply text-sm font-medium text-primary;
+  }
+
+  .text-display {
+    @apply text-[34px] leading-[40px] font-semibold tracking-tight text-foreground sm:text-[40px] sm:leading-[48px];
+    /* Optical compression on the largest step only — editorial, "engineered". */
+    letter-spacing: -0.02em;
+  }
+
+  .text-title {
+    @apply text-2xl font-semibold tracking-tight text-foreground;
+    letter-spacing: -0.01em;
+  }
+
+  .text-heading {
+    @apply text-lg font-semibold text-foreground;
+    letter-spacing: 0;
+  }
+
+  .text-body-lg {
+    @apply text-base text-foreground;
+  }
+
+  .text-body {
+    @apply text-sm text-foreground;
+  }
+
+  .text-caption {
+    @apply text-xs text-muted;
+  }
+
+  .text-micro {
+    @apply text-[11px] font-medium uppercase tracking-[0.06em] text-muted;
+  }
+
+  .dashboard-panel {
+    @apply border border-border bg-surface shadow-elev-1;
+  }
+
+  .metric-rail {
+    @apply border-l border-border pl-4;
+  }
+
+  .inspector-empty {
+    @apply rounded-lg border border-dashed border-border bg-surface p-8 text-center;
+  }
+
+  .form-hint {
+    @apply text-xs leading-relaxed text-muted;
+  }
+
+  .stagger-item {
+    animation: stagger-fade 0.4s ease-out forwards;
+    opacity: 0;
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes stagger-fade {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 0 1px var(--border-strong); }
+    50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 36%, transparent); }
+  }
+  @keyframes glow-pulse-warning {
+    0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning) 42%, transparent); }
+    50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning) 72%, transparent); }
+  }
+  @keyframes edge-flow {
+    0% { stroke-dashoffset: 20; }
+    100% { stroke-dashoffset: 0; }
+  }
+}
+
+/* Theme-aware React Flow chrome — never pure white in light mode */
+.canvas-flow {
+  --xy-background-color: var(--bg);
+  --xy-background-pattern-color: var(--canvas-grid);
+  --xy-edge-stroke-default: var(--canvas-edge);
+  --xy-connectionline-stroke-default: var(--canvas-connection);
+  --xy-node-background-color: var(--surface);
+  --xy-node-border: 1px solid var(--border);
+  --xy-node-color: var(--fg);
+  --xy-handle-background-color: var(--fg-muted);
+  --xy-handle-border-color: var(--bg);
+  --xy-selection-background-color: color-mix(in srgb, var(--primary) 8%, transparent);
+  --xy-selection-border: 1px dotted color-mix(in srgb, var(--primary) 45%, transparent);
+  --xy-edge-label-background-color: var(--surface-elevated);
+  --xy-edge-label-color: var(--fg);
+  --xy-minimap-background-color: var(--surface-elevated);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--bg) 72%, transparent);
+  --xy-minimap-node-background-color: var(--fg-muted);
+  --xy-controls-button-background-color: var(--surface-elevated);
+  --xy-controls-button-background-color-hover: var(--surface-hover);
+  --xy-controls-button-border-color: var(--border);
+  --xy-attribution-background-color: color-mix(in srgb, var(--surface) 80%, transparent);
+}
+
+.canvas-flow.react-flow {
+  background-color: var(--bg);
+}
+
+.canvas-flow .react-flow__pane,
+.canvas-flow .react-flow__viewport,
+.canvas-flow .react-flow__renderer {
+  background-color: transparent !important;
+}
+
+.canvas-flow .react-flow__minimap {
+  background-color: var(--surface-elevated) !important;
+}
+
+/* The canvas is intentionally matte: no vignette or atmospheric gradient. */
+.canvas-vignette,
+.canvas-aura {
+  display: none;
+}
+
+/* Instrument node cards: a 1px inner top-edge highlight rendered on a
+   pseudo-element so it composes with the state-driven box-shadow instead of
+   fighting it. Inherits the card's radius; never intercepts pointer events. */
+.node-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 0 var(--node-highlight);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.canvas-flow .react-flow__edge-path {
+  stroke-linecap: round;
+  transition: stroke-width var(--dur-1) var(--ease-out), stroke var(--dur-1) var(--ease-out);
+}
+
+/* Generic fallback edge affordances — kept minimal so component-level
+   styling (owned by the edge agent) wins where it applies. */
+.canvas-flow .react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 2px;
+}
+
+.canvas-flow .react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 2px;
+  stroke: color-mix(in srgb, var(--canvas-edge) 55%, var(--primary));
+}
+
+/* Connection handles — quiet squares that read as ports, not ornaments */
+.canvas-flow .react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border-width: 1.5px;
+  transition: transform var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+
+.canvas-flow .react-flow__node:hover .react-flow__handle {
+  transform: scale(1.2);
+}
+
+.canvas-flow .react-flow__handle:hover {
+  transform: scale(1.4);
+}
+
+/* Keyboard focus affordance for ports */
+.canvas-flow .react-flow__handle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Controls — a plain bordered strip */
+.canvas-flow .react-flow__controls {
+  gap: 0;
+  padding: 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  box-shadow: var(--elev-1);
+  overflow: hidden;
+}
+
+.canvas-flow .react-flow__controls-button {
+  width: 32px;
+  height: 32px;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  color: var(--fg-muted) !important;
+  transition: background-color 0.15s var(--ease-out), color 0.15s var(--ease-out);
+}
+
+.canvas-flow .react-flow__controls-button:last-child {
+  border-bottom: none !important;
+}
+
+.canvas-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.canvas-flow .react-flow__controls-button:hover {
+  background: var(--surface-hover) !important;
+  color: var(--fg) !important;
+}
+
+.canvas-flow .react-flow__minimap {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  box-shadow: var(--elev-1);
+}
+
+.canvas-flow .react-flow__attribution {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .hover-reveal {
+    opacity: 1 !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .stagger-item, .section-block { opacity: 1; animation: none; }
+  .animate-pulse, .animate-spin, .animate-fade-in,
+  .animate-glow-pulse, .animate-glow-pulse-warning, .animate-edge-flow,
+  .animate-edge-settle, .animate-panel-in {
+    animation: none !important;
+  }
+}
