@@ -128,7 +128,7 @@ def evaluate_quality_gate(
     # Fetch candidate runs
     candidate_runs = (
         db.query(models.WorkflowRun)
-        .filter(models.WorkflowRun.version_id == candidate_version.id)
+        .filter(models.WorkflowRun.workflow_version_id == candidate_version.id)
         .order_by(models.WorkflowRun.created_at.desc())
         .limit(run_limit)
         .all()
@@ -140,7 +140,7 @@ def evaluate_quality_gate(
     if workflow.published_version_id and workflow.published_version_id != candidate_version.id:
         baseline_runs = (
             db.query(models.WorkflowRun)
-            .filter(models.WorkflowRun.version_id == workflow.published_version_id)
+            .filter(models.WorkflowRun.workflow_version_id == workflow.published_version_id)
             .order_by(models.WorkflowRun.created_at.desc())
             .limit(run_limit)
             .all()
