@@ -25,14 +25,46 @@ from app.services.graph_validation import GraphValidationError, validate_workflo
 from app.services.run_concurrency import count_active_runs
 from app.services.workflow_capabilities import workflow_needs_gemini
 
+from app.schemas.quality_gate import PublishPayload, QualityGateReport
+from app.services.quality_gate import evaluate_quality_gate
+
 router = APIRouter(tags=["platform"])
 
 
-# ---------- publish / rollback (environments-lite) ----------
+# ---------- publish / rollback (environments-lite) & quality gates ----------
 
 
-class PublishPayload(BaseModel):
-    version_id: UUID
+
+@router.get(
+    "/api/workflows/{workflow_id}/versions/{version_id}/quality-gate",
+    response_model=QualityGateReport,
+)
+def inspect_quality_gate(
+    workflow_id: UUID,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Inspect pre-publish quality gate status, benchmark metrics, and blockers for a workflow version."""
+    workflow = (
+        db.query(models.Workflow)
+        .filter(models.Workflow.id == workflow_id, models.Workflow.user_id == user_id)
+        .first()
+    )
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    version = (
+        db.query(models.WorkflowVersion)
+        .filter(
+            models.WorkflowVersion.id == version_id,
+            models.WorkflowVersion.workflow_id == workflow_id,
+        )
+        .first()
+    )
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return evaluate_quality_gate(db, workflow, version)
 
 
 @router.post("/api/workflows/{workflow_id}/publish")
@@ -59,6 +91,19 @@ def publish_version(
     )
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
+
+    # Evaluate pre-publish quality gate
+    gate_report = evaluate_quality_gate(db, workflow, version)
+    if not gate_report.can_publish and not payload.force:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "quality_gate_failed",
+                "message": "Workflow version did not meet quality gate requirements before publish.",
+                "report": gate_report.model_dump(mode="json"),
+            },
+        )
+
     previous = workflow.published_version_id
     workflow.published_version_id = version.id
     record_audit(
@@ -67,14 +112,24 @@ def publish_version(
         "publish",
         "workflow",
         workflow_id,
-        {"version": version.version_number, "previous_version_id": str(previous) if previous else None},
+        {
+            "version": version.version_number,
+            "previous_version_id": str(previous) if previous else None,
+            "quality_gate_passed": gate_report.passed,
+            "quality_gate_bypassed": (not gate_report.passed and payload.force),
+            "override_reason": payload.override_reason if payload.force else None,
+            "gate_summary": gate_report.summary,
+        },
     )
     db.commit()
     return {
         "workflow_id": str(workflow_id),
         "published_version_id": str(version.id),
         "published_version_number": version.version_number,
+        "quality_gate": gate_report.model_dump(mode="json"),
+        "bypassed": (not gate_report.passed and payload.force),
     }
+
 
 
 @router.get("/api/workflows/{workflow_id}/published")
