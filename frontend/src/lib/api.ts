@@ -304,7 +304,35 @@ export interface RagPreview {
   error?: string;
 }
 
+/** Pre-publish quality gate check item. */
+export interface QualityCheckItem {
+  check_id: string;
+  name: string;
+  status: "passed" | "failed" | "warned" | "skipped";
+  metric_value?: number | null;
+  threshold_value?: number | null;
+  details: string;
+  remediation?: string | null;
+}
+
+/** Pre-publish quality gate verification report. */
+export interface QualityGateReport {
+  workflow_id: string;
+  version_id: string;
+  version_number: number;
+  passed: boolean;
+  can_publish: boolean;
+  gate_enabled: boolean;
+  summary: string;
+  checks: QualityCheckItem[];
+  blockers: string[];
+  warnings: string[];
+  candidate_metrics: Record<string, any>;
+  baseline_metrics?: Record<string, any> | null;
+}
+
 /** Unified Trust surface: every rate computed over one consistent recent-run
+
  *  window (see backend build_trust) so quality + safety + cost tell one story. */
 export interface TrustSummary {
   runs_scanned: number;
@@ -944,11 +972,30 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  publishVersion: (workflowId: string, versionId: string) =>
-    request<{ published_version_id: string; published_version_number: number }>(
-      `/api/workflows/${workflowId}/publish`,
-      { method: "POST", body: JSON.stringify({ version_id: versionId }) }
+  publishVersion: (
+    workflowId: string,
+    versionId: string,
+    options?: { force?: boolean; override_reason?: string }
+  ) =>
+    request<{
+      workflow_id: string;
+      published_version_id: string;
+      published_version_number: number;
+      quality_gate?: QualityGateReport;
+      bypassed?: boolean;
+    }>(`/api/workflows/${workflowId}/publish`, {
+      method: "POST",
+      body: JSON.stringify({
+        version_id: versionId,
+        force: options?.force ?? false,
+        override_reason: options?.override_reason,
+      }),
+    }),
+  getQualityGateReport: (workflowId: string, versionId: string) =>
+    request<QualityGateReport>(
+      `/api/workflows/${workflowId}/versions/${versionId}/quality-gate`
     ),
+
   getOpsConfig: () =>
     request<Record<string, number | boolean>>("/api/meta/ops-config"),
   getPublished: (workflowId: string) =>

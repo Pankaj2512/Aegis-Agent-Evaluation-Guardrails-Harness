@@ -131,8 +131,21 @@ Evaluates retrieval triples `(question, retrieved-context, answer)`:
 - **Semantic Faithfulness Judge**: 1–5 scoring by Gemini assessing whether the answer is factually faithful to source material.
 - **Hallucination Risk Matrix**: Automated tiering (`LOW`, `MEDIUM`, `HIGH`, `UNKNOWN`) with confidence calibration and behavioral warning flags (`unsupported_claims_likely`, `low_lexical_overlap`).
 
+### 3. Production Quality Gates & Pre-Publish Enforcement
+Prevents degraded or unverified agent graphs from reaching production:
+- **Pre-Publish Gate Inspection**: `GET /api/workflows/{id}/versions/{version_id}/quality-gate` runs a 6-point verification sweep returning structured status, blockers, and remediation steps.
+- **Publish Enforcement**: `POST /api/workflows/{id}/publish` blocks promotion (HTTP 422) if quality thresholds are violated.
+- **6-Point Verification Matrix**:
+  1. *Minimum Eval Aggregate Score* (e.g. `>= 3.5/5.0`)
+  2. *Minimum Eval Pass Rate* (e.g. `>= 80%` pass rate)
+  3. *Maximum Guardrail Block Rate* (e.g. `<= 10%` blocked runs)
+  4. *Performance Latency SLA* (e.g. p95 execution duration `<= 15,000ms`)
+  5. *Regression Protection* (blocks if score drops beyond configured tolerance vs current published baseline)
+  6. *Pre-deployment Benchmark Run Completeness* (ensures candidate has run through test evaluation datasets)
+- **Controlled Override**: Emergency hotfixes can bypass checks via `force=True` with mandatory audit trail recording (`override_reason`).
 
 ---
+
 
 ## Architecture
 
