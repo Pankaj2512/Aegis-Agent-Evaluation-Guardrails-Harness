@@ -27,6 +27,7 @@ from app.services.workflow_capabilities import workflow_needs_gemini
 
 from app.schemas.quality_gate import PublishPayload, QualityGateReport
 from app.services.quality_gate import evaluate_quality_gate
+from app.services.quality_alerts import schedule_quality_gate_webhook
 
 router = APIRouter(tags=["platform"])
 
@@ -42,6 +43,7 @@ router = APIRouter(tags=["platform"])
 def inspect_quality_gate(
     workflow_id: UUID,
     version_id: UUID,
+    notify_webhook: bool = Query(default=False, description="Dispatch webhook notification for quality gate outcome"),
     db: Session = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
 ):
@@ -64,7 +66,10 @@ def inspect_quality_gate(
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
 
-    return evaluate_quality_gate(db, workflow, version)
+    report = evaluate_quality_gate(db, workflow, version)
+    if notify_webhook:
+        schedule_quality_gate_webhook(workflow, version, report, action="inspection")
+    return report
 
 
 @router.post("/api/workflows/{workflow_id}/publish")
@@ -94,6 +99,7 @@ def publish_version(
 
     # Evaluate pre-publish quality gate
     gate_report = evaluate_quality_gate(db, workflow, version)
+    schedule_quality_gate_webhook(workflow, version, gate_report, action="publish_attempt")
     if not gate_report.can_publish and not payload.force:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -64,3 +64,41 @@ def quality_webhook_for_run(
                 "eval_scores": metrics.get("eval_scores"),
             },
         )
+
+
+def schedule_quality_gate_webhook(
+    workflow: models.Workflow | None,
+    version: models.WorkflowVersion,
+    report: Any,
+    action: str = "evaluated",
+) -> None:
+    """Dispatch webhook notification when a quality gate check is evaluated or published."""
+    if not workflow or not workflow.webhook_url:
+        return
+
+    event = "quality.gate_passed" if getattr(report, "passed", False) else "quality.gate_failed"
+    payload = {
+        "event": event,
+        "action": action,
+        "workflow_id": str(workflow.id),
+        "workflow_name": workflow.name,
+        "version_id": str(version.id),
+        "version_number": version.version_number,
+        "passed": bool(getattr(report, "passed", False)),
+        "can_publish": bool(getattr(report, "can_publish", False)),
+        "summary": str(getattr(report, "summary", "")),
+        "blockers": list(getattr(report, "blockers", [])),
+        "warnings": list(getattr(report, "warnings", [])),
+        "candidate_metrics": getattr(report, "candidate_metrics", {}) or {},
+    }
+    schedule_task(dispatch_webhook(workflow.webhook_url, payload))
+    logger.info(
+        "Quality gate webhook scheduled",
+        extra={
+            "event": event,
+            "workflow_id": str(workflow.id),
+            "version_id": str(version.id),
+            "passed": getattr(report, "passed", False),
+            "action": action,
+        },
+    )
