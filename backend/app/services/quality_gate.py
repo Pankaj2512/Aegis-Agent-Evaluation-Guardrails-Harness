@@ -431,7 +431,7 @@ def format_quality_gate_markdown_summary(report: QualityGateReport) -> str:
         status_icons = {
             QualityCheckStatus.PASSED: "✅ Pass",
             QualityCheckStatus.FAILED: "❌ Fail",
-            QualityCheckStatus.WARNING: "⚠️ Warn",
+            QualityCheckStatus.WARNED: "⚠️ Warn",
             QualityCheckStatus.SKIPPED: "⏭️ Skip",
         }
         for chk in report.checks:
