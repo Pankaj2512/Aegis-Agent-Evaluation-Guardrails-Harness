@@ -378,3 +378,105 @@ def evaluate_quality_gate(
         candidate_metrics=cand_metrics,
         baseline_metrics=baseline_metrics,
     )
+
+
+def format_quality_gate_markdown_summary(report: QualityGateReport) -> str:
+    """Render a QualityGateReport into a GitHub-flavored Markdown summary suitable for CI/CD PR comments."""
+    status_badge = (
+        "![Quality Gate: PASSED](https://img.shields.io/badge/Quality%20Gate-PASSED-brightgreen)"
+        if report.passed
+        else "![Quality Gate: FAILED](https://img.shields.io/badge/Quality%20Gate-FAILED-red)"
+    )
+    if not report.gate_enabled:
+        status_badge = "![Quality Gate: DISABLED](https://img.shields.io/badge/Quality%20Gate-DISABLED-lightgrey)"
+
+    lines = [
+        "# 🛡️ Aegis Quality Gate Report",
+        "",
+        f"**Workflow:** `{report.workflow_id}` | **Version:** `v{report.version_number}` (`{report.version_id}`)",
+        f"**Status:** {status_badge} | **Can Publish:** {'✅ Yes' if report.can_publish else '❌ No'}",
+        "",
+        f"> {report.summary}",
+        "",
+    ]
+
+    # Blockers section
+    if report.blockers:
+        lines.extend([
+            "### ❌ Blocking Issues",
+            "",
+        ])
+        for b in report.blockers:
+            lines.append(f"- **{b}**")
+        lines.append("")
+
+    # Warnings section
+    if report.warnings:
+        lines.extend([
+            "### ⚠️ Warnings",
+            "",
+        ])
+        for w in report.warnings:
+            lines.append(f"- {w}")
+        lines.append("")
+
+    # Checks summary table
+    if report.checks:
+        lines.extend([
+            "### 📋 Verification Checks",
+            "",
+            "| Check | Status | Metric | Target | Details |",
+            "|:------|:------:|:------:|:------:|:--------|",
+        ])
+        status_icons = {
+            QualityCheckStatus.PASSED: "✅ Pass",
+            QualityCheckStatus.FAILED: "❌ Fail",
+            QualityCheckStatus.WARNING: "⚠️ Warn",
+            QualityCheckStatus.SKIPPED: "⏭️ Skip",
+        }
+        for chk in report.checks:
+            icon = status_icons.get(chk.status, str(chk.status.value))
+            val_str = f"{chk.metric_value}" if chk.metric_value is not None else "-"
+            tgt_str = f"{chk.threshold_value}" if chk.threshold_value is not None else "-"
+            details_safe = chk.details.replace("|", "\\|")
+            lines.append(f"| **{chk.name}** | {icon} | `{val_str}` | `{tgt_str}` | {details_safe} |")
+        lines.append("")
+
+    # Remediations section
+    remediations = [
+        chk.remediation
+        for chk in report.checks
+        if chk.remediation and chk.status == QualityCheckStatus.FAILED
+    ]
+    if remediations:
+        lines.extend([
+            "### 🔧 Recommended Actions",
+            "",
+        ])
+        for rem in remediations:
+            lines.append(f"1. {rem}")
+        lines.append("")
+
+    # Benchmark metrics summary
+    metrics = report.candidate_metrics or {}
+    total_runs = metrics.get("total_runs", 0)
+    avg_score = metrics.get("avg_eval_score")
+    pass_rate = metrics.get("eval_pass_rate")
+    block_rate = metrics.get("guardrail_block_rate", 0.0)
+    p95_lat = metrics.get("p95_latency_ms")
+
+    lines.extend([
+        "### 📊 Benchmark Metrics Summary",
+        "",
+        f"- **Benchmark Runs:** {total_runs}",
+        f"- **Evaluation Avg Score:** {f'{avg_score:.2f} / 5.0' if avg_score is not None else 'N/A'}",
+        f"- **Evaluation Pass Rate:** {f'{pass_rate * 100:.1f}%' if pass_rate is not None else 'N/A'}",
+        f"- **Guardrail Block Rate:** {f'{block_rate * 100:.1f}%' if block_rate is not None else '0.0%'}",
+        f"- **p95 Latency:** {f'{p95_lat:.0f} ms' if p95_lat is not None else 'N/A'}",
+        "",
+        "---",
+        "*Automated quality gate verification provided by Aegis Agent Evaluation & Guardrails Harness.*",
+    ])
+
+    return "\n".join(lines)
+
