@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,10 @@ from app.services.run_concurrency import count_active_runs
 from app.services.workflow_capabilities import workflow_needs_gemini
 
 from app.schemas.quality_gate import PublishPayload, QualityGateReport
-from app.services.quality_gate import evaluate_quality_gate
+from app.services.quality_gate import (
+    evaluate_quality_gate,
+    format_quality_gate_markdown_summary,
+)
 from app.services.quality_alerts import schedule_quality_gate_webhook
 
 router = APIRouter(tags=["platform"])
@@ -70,6 +73,40 @@ def inspect_quality_gate(
     if notify_webhook:
         schedule_quality_gate_webhook(workflow, version, report, action="inspection")
     return report
+
+
+@router.get(
+    "/api/workflows/{workflow_id}/versions/{version_id}/quality-gate/summary",
+    response_class=Response,
+)
+def inspect_quality_gate_markdown_summary(
+    workflow_id: UUID,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Retrieve pre-publish quality gate report formatted as GitHub-flavored Markdown for PR comments and CI/CD logs."""
+    workflow = (
+        db.query(models.Workflow)
+        .filter(models.Workflow.id == workflow_id, models.Workflow.user_id == user_id)
+        .first()
+    )
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    version = (
+        db.query(models.WorkflowVersion)
+        .filter(
+            models.WorkflowVersion.id == version_id,
+            models.WorkflowVersion.workflow_id == workflow_id,
+        )
+        .first()
+    )
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    report = evaluate_quality_gate(db, workflow, version)
+    markdown_text = format_quality_gate_markdown_summary(report)
+    return Response(content=markdown_text, media_type="text/markdown")
 
 
 @router.post("/api/workflows/{workflow_id}/publish")
