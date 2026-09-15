@@ -134,6 +134,7 @@ Evaluates retrieval triples `(question, retrieved-context, answer)`:
 ### 3. Production Quality Gates & Pre-Publish Enforcement
 Prevents degraded or unverified agent graphs from reaching production:
 - **Pre-Publish Gate Inspection**: `GET /api/workflows/{id}/versions/{version_id}/quality-gate` runs a 6-point verification sweep returning structured status, blockers, and remediation steps.
+- **CI/CD Markdown Summary**: `GET /api/workflows/{id}/versions/{version_id}/quality-gate/summary` exports a formatted GitHub-flavored Markdown report with status shields badges, checks table, and remediation steps for direct injection into PR comments or CI/CD build logs.
 - **Publish Enforcement**: `POST /api/workflows/{id}/publish` blocks promotion (HTTP 422) if quality thresholds are violated.
 - **6-Point Verification Matrix**:
   1. *Minimum Eval Aggregate Score* (e.g. `>= 3.5/5.0`)
@@ -143,6 +144,13 @@ Prevents degraded or unverified agent graphs from reaching production:
   5. *Regression Protection* (blocks if score drops beyond configured tolerance vs current published baseline)
   6. *Pre-deployment Benchmark Run Completeness* (ensures candidate has run through test evaluation datasets)
 - **Controlled Override**: Emergency hotfixes can bypass checks via `force=True` with mandatory audit trail recording (`override_reason`).
+
+```bash
+# Example: Post Quality Gate Markdown report directly into a GitHub PR
+curl -s http://127.0.0.1:8000/api/workflows/${WORKFLOW_ID}/versions/${VERSION_ID}/quality-gate/summary \
+  -H "Authorization: Bearer ${AEGIS_TOKEN}" > quality_report.md
+gh pr comment ${PR_NUMBER} --body-file quality_report.md
+```
 
 ---
 
@@ -241,6 +249,7 @@ aegis/
 | `GET` | `/api/runs/{id}/stream` | Run SSE |
 | `POST` | `/api/runs/{id}/approve` | Resume/deny a run paused at a human-approval gate |
 | `GET` | `/api/observability/*` | Summary, quality, errors, stream |
+| `GET` | `/api/workflows/{id}/versions/{v_id}/quality-gate/summary` | Export CI/CD Markdown quality report |
 | `POST` | `/api/workflows/{id}/publish` | Promote a version |
 
 Interactive OpenAPI: `/docs` when the backend is running.
